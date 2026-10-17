@@ -112,7 +112,7 @@ export async function joinHotspot() {
   if (!fs.existsSync(WIFI_HELPER)) return 'seer-wifi helper missing (seer away hotspot)';
   const pw = await readPassword(hotspotSsid);
   if (pw === null) return 'hotspot password missing from the keychain';
-  const r = await run(WIFI_HELPER, ['join', hotspotSsid], { input: pw + '\n', timeout: 30_000 });
+  const r = await run(WIFI_HELPER, ['join', hotspotSsid], { input: pw + '\n', timeout: 60_000 });
   return r.stdout.trim() || r.stderr.trim() || `exit ${r.code}`;
 }
 
