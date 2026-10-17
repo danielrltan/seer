@@ -33,18 +33,25 @@ let password = (String(data: FileHandle.standardInput.readDataToEndOfFile(), enc
 var names = [ssid]
 for (a, b) in [("'", "\u{2019}"), ("\u{2019}", "'")] where ssid.contains(a) { names.append(ssid.replacingOccurrences(of: a, with: b)) }
 
-do {
-    if !interface.powerOn() { try interface.setPower(true) }
+// An iPhone hotspot that is still waking up, or a Mac still leaving its last network, answers the first
+// association with tmpErr; it usually takes on a fresh scan. Third try: leave the current network first.
+var lastError: Error?
+var seen = false
+do { if !interface.powerOn() { try interface.setPower(true) } } catch { print("error: \(error.localizedDescription)"); exit(1) }
+for attempt in 1...3 {
+    if attempt == 3 { interface.disassociate(); Thread.sleep(forTimeInterval: 1) }
     for name in names {
-        let networks = try interface.scanForNetworks(withSSID: name.data(using: .utf8))
-        guard let network = networks.first else { continue }
-        try interface.associate(to: network, password: password.isEmpty ? nil : password)
-        print("joined")
-        exit(0)
+        guard let network = (try? interface.scanForNetworks(withSSID: name.data(using: .utf8)))?.first else { continue }
+        seen = true
+        do {
+            try interface.associate(to: network, password: password.isEmpty ? nil : password)
+            print("joined")
+            exit(0)
+        } catch { lastError = error }
     }
-    print("not-found")
-    exit(2)
-} catch {
-    print("error: \(error.localizedDescription)")
-    exit(1)
+    Thread.sleep(forTimeInterval: 2)
 }
+if !seen { print("not-found"); exit(2) }
+let code = (lastError as NSError?)?.code ?? 0
+print("error: \(lastError?.localizedDescription ?? "unknown") (code \(code)\(code == -3924 || code == -3906 ? "; check the password" : ""))")
+exit(1)
