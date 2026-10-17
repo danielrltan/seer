@@ -51,6 +51,22 @@ async function home() {
   return page('Seer', rows + foot);
 }
 
+// Can this browser decode the H.264 stream Streamed mode sends (WebCodecs)? Opened once from the phone.
+function checkPage() {
+  return page('Stream check', `<pre id="out">checking…</pre><script>
+(async () => {
+  const lines = ['browser: ' + navigator.userAgent, 'VideoDecoder: ' + ('VideoDecoder' in window)];
+  for (const codec of ['avc1.42E01F', 'avc1.4D401F', 'avc1.640028']) {
+    try { lines.push(codec + ': ' + (await VideoDecoder.isConfigSupported({ codec, codedWidth: 1280, codedHeight: 800, hardwareAcceleration: 'prefer-hardware' })).supported); }
+    catch (e) { lines.push(codec + ': ' + e.message); }
+  }
+  lines.push('screen: ' + screen.width + 'x' + screen.height + ' @' + devicePixelRatio + 'x');
+  document.getElementById('out').textContent = lines.join('\\n');
+  fetch('/s/check-result', { method: 'POST', body: lines.join('\\n') });
+})();
+</script>`);
+}
+
 function logPage(name) {
   return page(`${name} log`, `<header><a href="/">&larr;</a><span class="name">${esc(name)}</span></header><pre>${esc(tail(name, 120)) || 'No log yet.'}</pre>`);
 }
@@ -58,6 +74,12 @@ function logPage(name) {
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
+    if (url.pathname === '/s/check-result' && req.method === 'POST') {          // what the phone reported, for Seer's log
+      let body = ''; for await (const c of req) { body += c; if (body.length > 4000) break; }
+      log('stream check from a browser:\n' + body.slice(0, 4000));
+      res.writeHead(204); return res.end();
+    }
+    if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
     const m = url.pathname.match(/^\/log\/([^/]+)$/);
     const html = m ? logPage(cleanName(decodeURIComponent(m[1]))) : url.pathname === '/' ? await home() : null;
     if (!html) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('Not found'); }
