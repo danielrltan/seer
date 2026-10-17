@@ -63,6 +63,7 @@ function connect() {
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
       if (m.error) status(m.error, 'fail');
+      if ('dock' in m) $('dock').classList.toggle('on', m.dock);
       return;
     }
     const buf = new Uint8Array(ev.data), type = buf[0];

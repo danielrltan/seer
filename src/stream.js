@@ -5,6 +5,7 @@
 // otherwise open a WebSocket to it.
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
@@ -79,17 +80,27 @@ function startCapture() {
   toHelper({ cmd: 'start', maxWidth: stream.maxWidth || 1512, fps: stream.fps || 30, bitrate: stream.bitrate || 3_000_000 });
 }
 
-// An auto-hidden Dock shows when the pointer reaches its edge: move there in two steps, so the Dock sees the
-// pointer arrive rather than appear. Its edge comes from the Dock's own setting (bottom, left or right).
-function revealDock() {
-  execFile('/usr/bin/defaults', ['read', 'com.apple.dock', 'orientation'], (err, out) => {
-    const edge = err ? 'bottom' : String(out).trim();
-    const [near, at] = edge === 'left' ? [{ x: 0.02, y: 0.5 }, { x: 0, y: 0.5 }]
-      : edge === 'right' ? [{ x: 0.98, y: 0.5 }, { x: 1, y: 0.5 }]
-      : [{ x: 0.5, y: 0.97 }, { x: 0.5, y: 1 }];
-    toHelper({ cmd: 'input', t: 'move', ...near });
-    setTimeout(() => toHelper({ cmd: 'input', t: 'move', ...at }), 60);
-  });
+// The Dock button: an auto-hidden Dock only shows while the pointer sits on its edge, which a tap through a
+// stream cannot hold, so the button turns auto-hide off (the Dock stays) and on again. dock.json records that
+// Seer changed it, so the setting goes back when the last viewer leaves, or when the daemon starts after a crash.
+const DOCK_JOURNAL = path.join(HOME, 'dock.json');
+const run = (file, args) => new Promise(resolve => execFile(file, args, (err, out) => resolve(err ? null : String(out).trim())));
+const autohide = async () => (await run('/usr/bin/defaults', ['read', 'com.apple.dock', 'autohide'])) === '1';
+async function setAutohide(on) {
+  await run('/usr/bin/defaults', ['write', 'com.apple.dock', 'autohide', '-bool', on ? 'true' : 'false']);
+  await run('/usr/bin/killall', ['Dock']);                                       // the Dock reads it on relaunch
+}
+const dockChanged = () => { try { return JSON.parse(fs.readFileSync(DOCK_JOURNAL, 'utf8')).shownBySeer; } catch { return false; } };
+const markDock = shown => fs.writeFileSync(DOCK_JOURNAL, JSON.stringify({ shownBySeer: shown }) + '\n');
+
+export async function toggleDock() {
+  if (dockChanged()) { await setAutohide(true); markDock(false); }
+  else if (await autohide()) { markDock(true); await setAutohide(false); }
+  const shown = dockChanged() || !(await autohide());
+  for (const v of viewers) v.send(JSON.stringify({ dock: shown }));
+}
+export async function restoreDock() {
+  if (dockChanged()) { await setAutohide(true); markDock(false); }
 }
 
 // ---------- viewers ----------
@@ -109,6 +120,7 @@ function cleanInput(m) {
 
 export function attachStream(server, log) {
   connectHelper(log);
+  restoreDock();                                                                  // a crash left it shown
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   server.on('upgrade', async (req, socket, head) => {
     const deny = why => { log(`desktop refused: ${why}`); socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); };
@@ -131,14 +143,14 @@ export function attachStream(server, log) {
         if (binary) return;
         let m; try { m = JSON.parse(String(data)); } catch { return; }
         if (m.t === 'keyframe') return requestKey();
-        if (m.t === 'dock') return revealDock();
+        if (m.t === 'dock') return toggleDock();
         const input = cleanInput(m);
         if (input) toHelper(input);
       });
       ws.on('close', () => {
         viewers.delete(ws);
         log(`desktop viewer left; ${viewers.size} watching`);
-        if (!viewers.size) { toHelper({ cmd: 'stop' }); lastConfig = null; }
+        if (!viewers.size) { toHelper({ cmd: 'stop' }); lastConfig = null; restoreDock(); }
       });
     });
   });
