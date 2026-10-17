@@ -11,41 +11,47 @@ export function desktopPage() {
 :root{--bg:#000;--bar:#0a0a0a;--border:#262626;--text:#ededed;--quiet:#a1a1a1;--live:#00e676;--fail:#ff4d4f;--wait:#f5a524}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.3 -apple-system,system-ui,sans-serif;overflow:hidden;overscroll-behavior:none}
-#bar{position:fixed;top:0;left:0;right:0;height:calc(44px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 12px 0;display:flex;align-items:center;gap:10px;background:var(--bar);border-bottom:1px solid var(--border);z-index:2}
+/* #app is pinned to the part of the screen the phone actually shows (visualViewport, set from the script):
+   when the keyboard opens, iOS slides the page up, and everything inside #app stays in view above the keyboard */
+#app{position:fixed;left:0;right:0;top:var(--vt,0px);height:var(--vh,100%);overflow:hidden}
+#bar{position:absolute;top:0;left:0;right:0;height:calc(44px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left));display:flex;align-items:center;gap:10px;background:var(--bar);border-bottom:1px solid var(--border);z-index:2}
 #bar a{color:var(--quiet);text-decoration:none;font-size:18px;padding:4px 6px}
 #dot{width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none}
 #dot.live{background:var(--live)}#dot.fail{background:var(--fail)}
 #msg{color:var(--quiet);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
-button{background:none;border:1px solid var(--border);color:var(--text);border-radius:8px;height:32px;min-width:36px;padding:0 10px;font:inherit}
+button{background:none;border:1px solid var(--border);color:var(--text);border-radius:8px;height:32px;min-width:36px;padding:0 10px;font:inherit;flex:none}
 button.on{border-color:var(--live);color:var(--live)}
-#bar{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
-#stage{position:fixed;top:calc(44px + env(safe-area-inset-top));left:env(safe-area-inset-left);right:env(safe-area-inset-right);bottom:env(safe-area-inset-bottom);display:flex;align-items:center;justify-content:center;touch-action:none;overflow:hidden}
+#stage{position:absolute;top:calc(44px + env(safe-area-inset-top));left:env(safe-area-inset-left);right:env(safe-area-inset-right);bottom:env(safe-area-inset-bottom);display:flex;align-items:center;justify-content:center;touch-action:none;overflow:hidden}
 #wrap{transform-origin:0 0}
 canvas{display:block}
-#typepill{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);display:none;z-index:3;height:40px;padding:0 18px;border-radius:20px;border-color:var(--live);color:var(--live);background:var(--bar)}
+#keys{position:absolute;left:0;right:0;bottom:0;display:none;gap:6px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:var(--bar);border-top:1px solid var(--border);overflow-x:auto;z-index:2}
+#keys.open{display:flex}
+body.keys-open #stage{bottom:calc(50px + env(safe-area-inset-bottom))}
+body.kb-up #keys{padding-bottom:8px}
+body.kb-up.keys-open #stage{bottom:50px}
+#typepill{position:absolute;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);display:none;z-index:3;height:40px;padding:0 18px;border-radius:20px;border-color:var(--live);color:var(--live);background:var(--bar)}
 #typepill.show{display:block}
-/* Landscape on a phone: the bar becomes a column on the left, so the screen gets the full height */
+#type{position:fixed;left:-1000px;top:0;opacity:0;font-size:16px}
+/* Landscape on a phone: the controls are a column on the left, the key bar a two-column strip on the right,
+   and the screen fills the height between them. Both columns scroll if the keyboard leaves them short. */
 @media (orientation:landscape) and (max-height:500px){
-  #bar{top:0;bottom:0;left:0;right:auto;width:calc(52px + env(safe-area-inset-left));height:auto;flex-direction:column;align-items:center;gap:10px;padding:10px 0 10px env(safe-area-inset-left);border-bottom:none;border-right:1px solid var(--border)}
+  #bar{top:0;bottom:0;left:0;right:auto;width:calc(52px + env(safe-area-inset-left));height:auto;flex-direction:column;align-items:center;gap:8px;padding:8px 0 8px env(safe-area-inset-left);border-bottom:none;border-right:1px solid var(--border);overflow-y:auto}
   #msg{display:none}
-  button{min-width:40px;padding:0 6px}
-  #stage{top:0;left:calc(52px + env(safe-area-inset-left))}
-  #typepill{left:calc(52px + env(safe-area-inset-left));transform:none;margin-left:12px}
-  /* the key bar: a two-column strip on the right instead of a row along the bottom */
-  #keys{top:0;bottom:0;left:auto;right:0;width:calc(100px + env(safe-area-inset-right));grid-template-columns:1fr 1fr;align-content:center;gap:6px;padding:8px calc(6px + env(safe-area-inset-right)) 8px 6px;border-top:none;border-left:1px solid var(--border);overflow:hidden}
+  button{min-width:40px;height:30px;padding:0 6px}
+  #stage{top:0;bottom:0;left:calc(52px + env(safe-area-inset-left))}
+  #keys{top:0;bottom:0;left:auto;right:0;width:calc(100px + env(safe-area-inset-right));grid-template-columns:1fr 1fr;align-content:start;gap:6px;padding:8px calc(6px + env(safe-area-inset-right)) 8px 6px;border-top:none;border-left:1px solid var(--border);overflow-y:auto}
   #keys.open{display:grid}
   #keys button{min-width:0;width:100%}
-  body.keys-open #stage{right:calc(100px + env(safe-area-inset-right));bottom:0}
+  body.kb-up #keys{gap:4px;padding-top:6px;padding-bottom:6px}
+  body.kb-up #keys button,body.kb-up #bar button{height:26px}
+  body.kb-up #bar{gap:6px;padding-top:6px}
+  body.keys-open #stage,body.kb-up.keys-open #stage{right:calc(100px + env(safe-area-inset-right));bottom:0}
+  #typepill{left:calc(64px + env(safe-area-inset-left));transform:none}
 }
-/* portrait: the screen stops above the key bar while it is open */
-body.keys-open #stage{bottom:calc(50px + env(safe-area-inset-bottom))}
-#keys{position:fixed;left:0;right:0;bottom:0;display:none;gap:6px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:var(--bar);border-top:1px solid var(--border);overflow-x:auto;z-index:2}
-#keys.open{display:flex}
-#keys button{flex:none}
-#type{position:fixed;left:-1000px;top:0;opacity:0;font-size:16px}
 </style></head><body>
+<div id="app">
 <div id="bar"><a href="/" aria-label="Back">&larr;</a><span id="dot"></span><span id="msg">Connecting</span>
-<button id="dock" aria-label="Show the Dock">Dock</button><button id="kb" aria-label="Keyboard">&#9000;</button><button id="fit" aria-label="Fit to screen">1:1</button></div>
+<button id="kb" aria-label="Keyboard">&#9000;</button><button id="dock" aria-label="Show the Dock">Dock</button><button id="fit" aria-label="Fit to screen">1:1</button></div>
 <div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div></div>
 <div id="keys">
 <button data-mod="cmd">&#8984;</button><button data-mod="alt">&#8997;</button><button data-mod="ctrl">&#8963;</button><button data-mod="shift">&#8679;</button>
@@ -53,6 +59,7 @@ body.keys-open #stage{bottom:calc(50px + env(safe-area-inset-bottom))}
 <button data-key="ArrowLeft">&larr;</button><button data-key="ArrowUp">&uarr;</button><button data-key="ArrowDown">&darr;</button><button data-key="ArrowRight">&rarr;</button>
 </div>
 <button id="typepill">&#9000; Type</button>
+</div>
 <input id="type" inputmode="none" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
 <script>
 const $ = id => document.getElementById(id);
@@ -122,7 +129,16 @@ let fitTimer;
 const refit = () => { clearTimeout(fitTimer); fitTimer = setTimeout(fit, 120); };   // iOS reports the new size a moment after rotating
 window.addEventListener('resize', refit);
 window.addEventListener('orientationchange', refit);
-if (window.visualViewport) visualViewport.addEventListener('resize', refit);
+// Pin #app to what is visible: the keyboard shrinks the visual viewport and iOS scrolls the page under it.
+function syncViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  document.documentElement.style.setProperty('--vh', vv.height + 'px');
+  document.documentElement.style.setProperty('--vt', vv.offsetTop + 'px');
+  document.body.classList.toggle('kb-up', vv.height < window.innerHeight * 0.8);
+  refit();
+}
+if (window.visualViewport) { visualViewport.addEventListener('resize', syncViewport); visualViewport.addEventListener('scroll', syncViewport); syncViewport(); }
 function applyView() { wrap.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')'; $('fit').textContent = zoom > 1.01 ? 'fit' : '1:1'; }
 $('fit').onclick = () => {
   if (zoom > 1.01) { zoom = 1; panX = panY = 0; }
@@ -216,11 +232,17 @@ $('dock').onclick = () => send({ t: 'dock' });
 // does not (the screen did not shrink), a Type button appears instead: one tap. Opened by the Mac, the keyboard
 // also closes when focus leaves the text field; opened by hand (the keyboard button), it stays.
 const input = $('type');
-let kbOpen = false, kbAuto = false;
+let kbOpen = false, kbAuto = false, ourBlur = false;
 const keyboardUp = () => window.visualViewport && visualViewport.height < window.innerHeight * 0.8;
 function showKeys(auto) { $('keys').classList.add('open'); document.body.classList.add('keys-open'); $('kb').classList.add('on'); kbOpen = true; kbAuto = auto; $('typepill').classList.remove('show'); refit(); }
-function hideKeys() { $('keys').classList.remove('open'); document.body.classList.remove('keys-open'); $('kb').classList.remove('on'); kbOpen = kbAuto = false; input.setAttribute('inputmode', 'none'); input.blur(); refit(); }
-function openKeyboard(auto) { input.setAttribute('inputmode', 'text'); input.blur(); input.focus({ preventScroll: true }); showKeys(auto); }
+function closedKeys() { $('keys').classList.remove('open'); document.body.classList.remove('keys-open'); $('kb').classList.remove('on'); kbOpen = kbAuto = false; input.setAttribute('inputmode', 'none'); refit(); }
+function blurQuietly() { ourBlur = true; input.blur(); ourBlur = false; }
+function hideKeys() { closedKeys(); blurQuietly(); }
+function openKeyboard(auto) { input.setAttribute('inputmode', 'text'); blurQuietly(); input.focus({ preventScroll: true }); showKeys(auto); }
+// The keyboard closed some other way (iOS's own hide-keyboard key, Done): the key bar and the button follow.
+input.addEventListener('blur', () => { if (!ourBlur && kbOpen) closedKeys(); });
+// Buttons must not take focus from the input on press, or every key-bar tap would close the keyboard.
+document.querySelectorAll('#bar button, #keys button, #typepill').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
 function primeKeyboard() { if (!kbOpen) { input.setAttribute('inputmode', 'none'); input.focus({ preventScroll: true }); } }
 function textFocus(on) {
   if (on && !kbOpen) {
