@@ -11,6 +11,7 @@ import { HOME, LOGS, secretPath } from './store.js';
 export const HOME_PORT = 7399;
 const AGENTS = path.join(os.homedir(), 'Library', 'LaunchAgents');
 const SEER_BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'seer.js');
+const STREAM_BIN = path.join(HOME, 'SeerStream.app', 'Contents', 'MacOS', 'SeerStream');
 
 const which = bin => { try { return execFileSync('/usr/bin/which', [bin], { encoding: 'utf8' }).trim(); } catch { return ''; } };
 const xml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -30,10 +31,16 @@ function plist(label, args, logName) {
 `;
 }
 
+// bootout returns before the old job is gone, and a bootstrap in that window fails (5: Input/output error), so
+// wait for it to disappear, and retry the bootstrap briefly.
 function load(label, file) {
-  const domain = `gui/${process.getuid()}`;
+  const domain = `gui/${process.getuid()}`, loaded = () => { try { execFileSync('/bin/launchctl', ['print', `${domain}/${label}`], { stdio: 'ignore' }); return true; } catch { return false; } };
   try { execFileSync('/bin/launchctl', ['bootout', `${domain}/${label}`], { stdio: 'ignore' }); } catch {}
-  execFileSync('/bin/launchctl', ['bootstrap', domain, file]);
+  for (let i = 0; i < 50 && loaded(); i++) execFileSync('/bin/sleep', ['0.1']);
+  for (let i = 0; ; i++) {
+    try { execFileSync('/bin/launchctl', ['bootstrap', domain, file], { stdio: 'pipe' }); return; }
+    catch (e) { if (i >= 10) throw new Error(`launchctl bootstrap ${label}: ${String(e.stderr || e.message).trim()}`); execFileSync('/bin/sleep', ['0.3']); }
+  }
 }
 
 export async function installAgents() {
@@ -44,6 +51,8 @@ export async function installAgents() {
     ['dev.seer.tunnel', [cloudflared, 'tunnel', '--no-autoupdate', 'run', '--token-file', secretPath('tunnel-token')], 'tunnel.log'],
     ['dev.seer.daemon', [process.execPath, SEER_BIN, 'daemon'], 'daemon.log'],
   ];
+  // Streamed mode: the screen-capture helper, as its own agent so its permissions are its own (scripts/build-stream.sh).
+  if (fs.existsSync(STREAM_BIN)) agents.push(['dev.seer.stream', [STREAM_BIN], 'stream.log']);
   for (const [label, args, log] of agents) {
     const file = path.join(AGENTS, `${label}.plist`);
     fs.writeFileSync(file, plist(label, args, log));
@@ -52,7 +61,7 @@ export async function installAgents() {
 }
 
 export function uninstallAgents() {
-  for (const label of ['dev.seer.tunnel', 'dev.seer.daemon']) {
+  for (const label of ['dev.seer.tunnel', 'dev.seer.daemon', 'dev.seer.stream']) {
     try { execFileSync('/bin/launchctl', ['bootout', `gui/${process.getuid()}/${label}`], { stdio: 'ignore' }); } catch {}
     try { fs.unlinkSync(path.join(AGENTS, `${label}.plist`)); } catch {}
   }

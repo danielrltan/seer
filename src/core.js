@@ -179,6 +179,19 @@ export async function list() {
   return out;
 }
 
+// What the desktop stream needs to check a viewer's Access token: the home app's audience tag, and the team
+// domain (read off where the home page sends a visitor who is not signed in). Looked up once, then kept.
+export async function ensureStreamAuth() {
+  const cfg = requireSetup();
+  if (cfg.homeAud && cfg.teamDomain) return cfg;
+  const app = await cf.accessApp(cfg.accountId, homeHost(cfg));
+  if (!app?.aud) throw new Error(`no Access app for ${homeHost(cfg)}: run seer setup again`);
+  const { location } = await probe(homeHost(cfg));
+  const team = new URL(location).host;
+  if (!/\.cloudflareaccess\.com$/.test(team)) throw new Error(`unexpected sign-in host ${team}`);
+  return saveConfig({ homeAud: app.aud, teamDomain: team });
+}
+
 // One-time setup: check the token, the zone and Zero Trust; make the tunnel, the sign-in policy and the home page.
 export async function setup({ zone, emails }) {
   if (!zone) throw new Error('pass --zone (a domain whose DNS is on Cloudflare)');

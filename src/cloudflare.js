@@ -86,6 +86,9 @@ export async function ensureAccessApp(acc, host, policyId) {
   });
   return app.id;
 }
+export async function accessApp(acc, host) {
+  return (await cf('GET', `/accounts/${acc}/access/apps`)).find(a => a.domain === host) || null;
+}
 export async function removeAccessApp(acc, host) {
   const apps = await cf('GET', `/accounts/${acc}/access/apps`);
   for (const a of apps) if (a.domain === host) await cf('DELETE', `/accounts/${acc}/access/apps/${a.id}`);

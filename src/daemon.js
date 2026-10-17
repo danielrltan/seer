@@ -8,6 +8,9 @@ import { tail } from './devserver.js';
 import { cleanName } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover } from './awake.js';
+import { attachStream } from './stream.js';
+import { desktopPage } from './viewer.js';
+import { ensureStreamAuth } from './core.js';
 
 let away = { mode: 'starting' };
 
@@ -43,8 +46,9 @@ async function home() {
   const items = await list();
   const b = away.battery;
   const foot = `<p class="foot">Mac: ${esc(away.mode)}${b ? ` · ${b.onBattery ? `battery ${b.pct}%` : 'plugged in'}` : ''}</p>`;
-  if (!items.length) return page('Seer', '<p class="empty">No previews running.</p>' + foot);
-  const rows = items.map(p => {
+  const desktop = `<a class="row running" href="/desktop"><span class="dot"></span><span class="name">desktop</span><span class="meta">streamed</span></a>`;
+  if (!items.length) return page('Seer', desktop + foot);
+  const rows = desktop + items.map(p => {
     const href = p.state === 'running' ? p.url : `/log/${encodeURIComponent(p.name)}`;
     return `<a class="row ${esc(p.state.replace(/\s+/g, '-'))}" href="${esc(href)}"><span class="dot"></span><span class="name">${esc(p.name)}</span><span class="meta">${esc(p.state)}</span></a>`;
   }).join('');
@@ -71,7 +75,7 @@ function logPage(name) {
   return page(`${name} log`, `<header><a href="/">&larr;</a><span class="name">${esc(name)}</span></header><pre>${esc(tail(name, 120)) || 'No log yet.'}</pre>`);
 }
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/s/check-result' && req.method === 'POST') {          // what the phone reported, for Seer's log
@@ -79,6 +83,7 @@ http.createServer(async (req, res) => {
       log('stream check from a browser:\n' + body.slice(0, 4000));
       res.writeHead(204); return res.end();
     }
+    if (url.pathname === '/desktop') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
     if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
     const m = url.pathname.match(/^\/log\/([^/]+)$/);
     const html = m ? logPage(cleanName(decodeURIComponent(m[1]))) : url.pathname === '/' ? await home() : null;
@@ -90,6 +95,8 @@ http.createServer(async (req, res) => {
     res.end('Seer home failed: ' + e.message);
   }
 }).listen(HOME_PORT, '127.0.0.1', () => console.log(`seer home on 127.0.0.1:${HOME_PORT}`));
+attachStream(server, msg => log(msg));
+ensureStreamAuth().then(() => log('desktop stream: Access token check ready')).catch(e => log(`desktop stream: ${e.message}`));
 
 // Hold the Mac awake while anything is running; let it sleep when nothing is. caffeinate covers an open lid;
 // away mode (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
