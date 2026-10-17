@@ -1,6 +1,7 @@
 // `seer daemon` (run by launchd): serves Seer home on 127.0.0.1:7399, which the tunnel publishes behind sign-in
 // at seer.<zone>, and holds the Mac awake (caffeinate -is) while any preview is running.
 // caffeinate cannot stop sleep when the lid is closed on battery: the Mac must stay open, or plugged in.
+import fs from 'node:fs';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { list } from './core.js';
@@ -35,9 +36,13 @@ pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;p
 `;
 const EYE = `<svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true"><path d="M1 7C4 2 7.5 1 11 1s7 1 10 6c-3 5-6.5 6-10 6S4 12 1 7Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="7" r="2.6" fill="#00e676"/></svg>`;
 
+export const APP_HEAD = `<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials"><link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Seer"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`;
+
 function page(title, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>${esc(title)}</title>
+${APP_HEAD}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
 <style>${STYLE}</style></head><body><main><header>${EYE}<b>Seer</b></header>${body}</main></body></html>`;
 }
@@ -82,6 +87,20 @@ const server = http.createServer(async (req, res) => {
       let body = ''; for await (const c of req) { body += c; if (body.length > 4000) break; }
       log('stream check from a browser:\n' + body.slice(0, 4000));
       res.writeHead(204); return res.end();
+    }
+    // Home-screen app: opened from its icon, iOS shows Seer with no browser bars (a page cannot hide them itself).
+    if (url.pathname === '/manifest.webmanifest') {
+      res.writeHead(200, { 'content-type': 'application/manifest+json' });
+      return res.end(JSON.stringify({
+        name: 'Seer', short_name: 'Seer', start_url: '/desktop', scope: '/', display: 'standalone', orientation: 'any',
+        background_color: '#000000', theme_color: '#000000',
+        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }, { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
+      }));
+    }
+    const icon = url.pathname.match(/^\/icon-(180|192|512)\.png$/);
+    if (icon) {
+      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' });
+      return res.end(fs.readFileSync(new URL(`../assets/icon-${icon[1]}.png`, import.meta.url)));
     }
     if (url.pathname === '/desktop') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
     if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
