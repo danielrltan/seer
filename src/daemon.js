@@ -7,6 +7,9 @@ import { list } from './core.js';
 import { tail } from './devserver.js';
 import { cleanName } from './store.js';
 import { HOME_PORT } from './services.js';
+import { reconcile, release, failover } from './awake.js';
+
+let away = { mode: 'starting' };
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -24,6 +27,7 @@ a{color:inherit;text-decoration:none}
 .name{font:500 14px/1.3 'Geist Mono',ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta{color:var(--quiet);font-size:13px;margin-left:auto;white-space:nowrap}
 .empty{color:var(--quiet);padding:24px 0}
+.foot{color:var(--quiet);font-size:13px;margin-top:20px}
 pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;font:12px/1.5 'Geist Mono',ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}
 `;
 const EYE = `<svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true"><path d="M1 7C4 2 7.5 1 11 1s7 1 10 6c-3 5-6.5 6-10 6S4 12 1 7Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="7" r="2.6" fill="#00e676"/></svg>`;
@@ -37,12 +41,14 @@ function page(title, body) {
 
 async function home() {
   const items = await list();
-  if (!items.length) return page('Seer', '<p class="empty">No previews running.</p>');
+  const b = away.battery;
+  const foot = `<p class="foot">Mac: ${esc(away.mode)}${b ? ` · ${b.onBattery ? `battery ${b.pct}%` : 'plugged in'}` : ''}</p>`;
+  if (!items.length) return page('Seer', '<p class="empty">No previews running.</p>' + foot);
   const rows = items.map(p => {
     const href = p.state === 'running' ? p.url : `/log/${encodeURIComponent(p.name)}`;
     return `<a class="row ${esc(p.state.replace(/\s+/g, '-'))}" href="${esc(href)}"><span class="dot"></span><span class="name">${esc(p.name)}</span><span class="meta">${esc(p.state)}</span></a>`;
   }).join('');
-  return page('Seer', rows);
+  return page('Seer', rows + foot);
 }
 
 function logPage(name) {
@@ -63,15 +69,22 @@ http.createServer(async (req, res) => {
   }
 }).listen(HOME_PORT, '127.0.0.1', () => console.log(`seer home on 127.0.0.1:${HOME_PORT}`));
 
-// Hold the Mac awake while anything is running; let it sleep when nothing is.
-let awake = null;
+// Hold the Mac awake while anything is running; let it sleep when nothing is. caffeinate covers an open lid;
+// away mode (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
+let awake = null, running = false;
+const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
+const checkNetwork = failover(log);
 async function tick() {
-  const running = (await list().catch(() => [])).some(p => p.state === 'running');
+  running = (await list().catch(() => [])).some(p => p.state === 'running');
   if (running && !awake) {
     awake = spawn('/usr/bin/caffeinate', ['-is'], { stdio: 'ignore' });
     awake.on('exit', () => { awake = null; });
   } else if (!running && awake) { awake.kill(); awake = null; }
+  const next = await reconcile(running).catch(e => ({ mode: 'error', why: e.message }));
+  if (next.mode !== away.mode || next.why !== away.why) log(`away mode: ${next.mode} (${next.why})`);
+  away = next;
 }
 setInterval(tick, 15_000);
+setInterval(() => checkNetwork(running).catch(e => log(`failover: ${e.message}`)), 5_000);
 tick();
-process.on('SIGTERM', () => { awake?.kill(); process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { awake?.kill(); await release().catch(() => {}); process.exit(0); });
