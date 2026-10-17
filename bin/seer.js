@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 import { execFileSync } from 'node:child_process';
 import * as core from '../src/core.js';
 import * as away from '../src/awake.js';
-import { uninstallAgents } from '../src/services.js';
+import { uninstallAgents, installAgents } from '../src/services.js';
 import { HOME, loadConfig, saveConfig } from '../src/store.js';
 
 const HELP = `seer: run a build and get a private link to open it on your phone
@@ -21,6 +21,8 @@ const HELP = `seer: run a build and get a private link to open it on your phone
   seer down <name>        stop it; the link stops working
   seer list               every preview and its link
   seer setup --zone example.com --email you@example.com [--email ...]
+  seer desktop on|off     the parked remote desktop (/desktop): off unless turned on
+  seer away on|off        keep the Mac awake while previews run, even with the lid closed (off by default)
   seer away install       let Seer keep the Mac awake with the lid closed (asks for sudo once)
   seer away hotspot "SSID"  fail over to this phone hotspot when the Wi-Fi goes (password on stdin)
   seer away status        what away mode is doing now
@@ -68,6 +70,7 @@ async function awayCmd(sub, value) {
     saveConfig({ hotspotSsid: value });
     return console.log(`hotspot set: ${value} (password in the login keychain). Test it with: seer away join`);
   }
+  if (sub === 'on' || sub === 'off') { saveConfig({ away: sub === 'on' }); if (sub === 'off') await away.release(); return console.log(`away mode ${sub}`); }
   if (sub === 'join') return console.log(`hotspot join: ${await away.joinHotspot()}`);
   if (sub === 'status' || !sub) {
     const rule = await away.ruleInstalled(), b = await away.battery();
@@ -99,6 +102,13 @@ try {
       break;
     }
     case 'setup': { const steps = await core.setup({ zone: o.zone, emails: o.email }); show(steps, steps.map(s => `- ${s}`).join('\n')); break; }
+    case 'desktop': {
+      if (!['on', 'off'].includes(arg)) throw new Error('seer desktop on | off');
+      saveConfig({ desktop: arg === 'on' });
+      await installAgents();
+      console.log(`remote desktop ${arg}${arg === 'on' ? ' (needs ~/.seer/SeerStream.app: scripts/build-stream.sh)' : ''}`);
+      break;
+    }
     case 'away': await awayCmd(arg, positionals[2]); break;
     case 'daemon': await import('../src/daemon.js'); break;
     case 'uninstall': uninstallAgents(); await away.release(); console.log('background services stopped and normal sleep restored (previews and links are left as they are)'); break;

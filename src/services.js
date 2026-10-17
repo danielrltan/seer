@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { HOME, LOGS, secretPath } from './store.js';
+import { HOME, LOGS, secretPath, loadConfig } from './store.js';
 
 export const HOME_PORT = 7399;
 const AGENTS = path.join(os.homedir(), 'Library', 'LaunchAgents');
@@ -52,12 +52,18 @@ export async function installAgents() {
     ['dev.seer.daemon', [process.execPath, SEER_BIN, 'daemon'], 'daemon.log'],
   ];
   // Streamed mode: the screen-capture helper, as its own agent so its permissions are its own (scripts/build-stream.sh).
-  if (fs.existsSync(STREAM_BIN)) agents.push(['dev.seer.stream', [STREAM_BIN], 'stream.log']);
+  if (loadConfig().desktop && fs.existsSync(STREAM_BIN)) agents.push(['dev.seer.stream', [STREAM_BIN], 'stream.log']);
+  else unload('dev.seer.stream');
   for (const [label, args, log] of agents) {
     const file = path.join(AGENTS, `${label}.plist`);
     fs.writeFileSync(file, plist(label, args, log));
     load(label, file);
   }
+}
+
+function unload(label) {
+  try { execFileSync('/bin/launchctl', ['bootout', `gui/${process.getuid()}/${label}`], { stdio: 'ignore' }); } catch {}
+  try { fs.unlinkSync(path.join(AGENTS, `${label}.plist`)); } catch {}
 }
 
 export function uninstallAgents() {

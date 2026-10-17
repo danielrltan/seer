@@ -6,7 +6,7 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { list } from './core.js';
 import { tail } from './devserver.js';
-import { cleanName } from './store.js';
+import { cleanName, loadConfig } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover } from './awake.js';
 import { attachStream } from './stream.js';
@@ -51,7 +51,7 @@ async function home() {
   const items = await list();
   const b = away.battery;
   const foot = `<p class="foot">Mac: ${esc(away.mode)}${b ? ` · ${b.onBattery ? `battery ${b.pct}%` : 'plugged in'}` : ''}</p>`;
-  const desktop = `<a class="row running" href="/desktop"><span class="dot"></span><span class="name">desktop</span><span class="meta">streamed</span></a>`;
+  const desktop = !loadConfig().desktop ? '' : `<a class="row running" href="/desktop"><span class="dot"></span><span class="name">desktop</span><span class="meta">streamed</span></a>`;
   if (!items.length) return page('Seer', desktop + foot);
   const rows = desktop + items.map(p => {
     const href = p.state === 'running' ? p.url : `/log/${encodeURIComponent(p.name)}`;
@@ -102,7 +102,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' });
       return res.end(fs.readFileSync(new URL(`../assets/icon-${icon[1]}.png`, import.meta.url)));
     }
-    if (url.pathname === '/desktop') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
+    if (url.pathname === '/desktop' && loadConfig().desktop) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
     if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
     const m = url.pathname.match(/^\/log\/([^/]+)$/);
     const html = m ? logPage(cleanName(decodeURIComponent(m[1]))) : url.pathname === '/' ? await home() : null;
@@ -114,8 +114,11 @@ const server = http.createServer(async (req, res) => {
     res.end('Seer home failed: ' + e.message);
   }
 }).listen(HOME_PORT, '127.0.0.1', () => console.log(`seer home on 127.0.0.1:${HOME_PORT}`));
-attachStream(server, msg => log(msg));
-ensureStreamAuth().then(() => log('desktop stream: Access token check ready')).catch(e => log(`desktop stream: ${e.message}`));
+// Parked, opt-in (`seer desktop on`): the remote desktop. Off, nothing listens for a viewer and the upgrade is refused.
+if (loadConfig().desktop) {
+  attachStream(server, msg => log(msg));
+  ensureStreamAuth().then(() => log('desktop stream: Access token check ready')).catch(e => log(`desktop stream: ${e.message}`));
+} else server.on('upgrade', (req, socket) => socket.destroy());
 
 // Hold the Mac awake while anything is running; let it sleep when nothing is. caffeinate covers an open lid;
 // away mode (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
@@ -128,11 +131,12 @@ async function tick() {
     awake = spawn('/usr/bin/caffeinate', ['-is'], { stdio: 'ignore' });
     awake.on('exit', () => { awake = null; });
   } else if (!running && awake) { awake.kill(); awake = null; }
-  const next = await reconcile(running).catch(e => ({ mode: 'error', why: e.message }));
+  const next = loadConfig().away ? await reconcile(running).catch(e => ({ mode: 'error', why: e.message }))
+    : { mode: 'sleeps normally', why: 'away mode off (seer away on)' };
   if (next.mode !== away.mode || next.why !== away.why) log(`away mode: ${next.mode} (${next.why})`);
   away = next;
 }
 setInterval(tick, 15_000);
-setInterval(() => checkNetwork(running).catch(e => log(`failover: ${e.message}`)), 5_000);
+setInterval(() => checkNetwork(running && !!loadConfig().away).catch(e => log(`failover: ${e.message}`)), 5_000);
 tick();
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { awake?.kill(); await release().catch(() => {}); process.exit(0); });
