@@ -171,9 +171,9 @@ export async function setup({ zone, emails }) {
   const steps = [];
   const { zoneId, accountId } = await cf.zoneInfo(zone);
   steps.push(`token can manage ${zone}`);
-  const org = await cf.accessOrg(accountId);
-  if (!org?.auth_domain) throw new Error('Zero Trust is not set up on this account: open dash.cloudflare.com > Zero Trust once, pick a team name and the Free plan, then run setup again');
-  steps.push(`Zero Trust team: ${org.auth_domain}`);
+  const problem = await cf.accessProblem(accountId);
+  if (problem) throw new Error(`Cloudflare Access is not usable yet: open dash.cloudflare.com > Zero Trust, pick a team name and the Free plan (or click Enable Access), then run setup again.\n(${problem})`);
+  steps.push('Cloudflare Access is on');
   const idps = await cf.identityProviders(accountId);
   if (idps && !idps.length) steps.push('WARNING: no login method yet. Zero Trust > Settings > Authentication > add "One-time PIN"');
   const { tunnelId, tunnelToken } = await cf.ensureTunnel(accountId);
@@ -181,7 +181,7 @@ export async function setup({ zone, emails }) {
   steps.push(`tunnel ${tunnelId}`);
   const prev = loadConfig();
   const policyId = await cf.ensurePolicy(accountId, emails, prev.policyId);
-  const cfg = saveConfig({ zone, zoneId, accountId, tunnelId, policyId, emails, teamDomain: org.auth_domain });
+  const cfg = saveConfig({ zone, zoneId, accountId, tunnelId, policyId, emails });
   steps.push(`sign-in allowed for ${emails.join(', ')}`);
 
   await installAgents();

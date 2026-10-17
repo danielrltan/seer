@@ -62,8 +62,10 @@ export async function removeCname(zoneId, host, tunnelId) {
 }
 
 // ---------- Access ----------
-export async function accessOrg(acc) {
-  try { return await cf('GET', `/accounts/${acc}/access/organizations`); } catch { return null; }   // null: Zero Trust not set up
+// Whether Access is on, read through the apps list (the token's Apps and Policies permission; the organization
+// endpoint needs a different one). Returns null when it is on, else Cloudflare's reason.
+export async function accessProblem(acc) {
+  try { await cf('GET', `/accounts/${acc}/access/apps`); return null; } catch (e) { return e.message; }
 }
 
 export async function ensurePolicy(acc, emails, existingId) {
