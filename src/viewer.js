@@ -28,9 +28,15 @@ canvas{display:block}
   #msg{display:none}
   button{min-width:40px;padding:0 6px}
   #stage{top:0;left:calc(52px + env(safe-area-inset-left))}
-  #keys,#typepill{left:calc(52px + env(safe-area-inset-left))}
-  #typepill{transform:none;margin-left:12px}
+  #typepill{left:calc(52px + env(safe-area-inset-left));transform:none;margin-left:12px}
+  /* the key bar: a two-column strip on the right instead of a row along the bottom */
+  #keys{top:0;bottom:0;left:auto;right:0;width:calc(100px + env(safe-area-inset-right));grid-template-columns:1fr 1fr;align-content:center;gap:6px;padding:8px calc(6px + env(safe-area-inset-right)) 8px 6px;border-top:none;border-left:1px solid var(--border);overflow:hidden}
+  #keys.open{display:grid}
+  #keys button{min-width:0;width:100%}
+  body.keys-open #stage{right:calc(100px + env(safe-area-inset-right));bottom:0}
 }
+/* portrait: the screen stops above the key bar while it is open */
+body.keys-open #stage{bottom:calc(50px + env(safe-area-inset-bottom))}
 #keys{position:fixed;left:0;right:0;bottom:0;display:none;gap:6px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:var(--bar);border-top:1px solid var(--border);overflow-x:auto;z-index:2}
 #keys.open{display:flex}
 #keys button{flex:none}
@@ -210,8 +216,8 @@ $('dock').onclick = () => send({ t: 'dock' });
 const input = $('type');
 let kbOpen = false, kbAuto = false;
 const keyboardUp = () => window.visualViewport && visualViewport.height < window.innerHeight * 0.8;
-function showKeys(auto) { $('keys').classList.add('open'); $('kb').classList.add('on'); kbOpen = true; kbAuto = auto; $('typepill').classList.remove('show'); }
-function hideKeys() { $('keys').classList.remove('open'); $('kb').classList.remove('on'); kbOpen = kbAuto = false; input.setAttribute('inputmode', 'none'); input.blur(); }
+function showKeys(auto) { $('keys').classList.add('open'); document.body.classList.add('keys-open'); $('kb').classList.add('on'); kbOpen = true; kbAuto = auto; $('typepill').classList.remove('show'); refit(); }
+function hideKeys() { $('keys').classList.remove('open'); document.body.classList.remove('keys-open'); $('kb').classList.remove('on'); kbOpen = kbAuto = false; input.setAttribute('inputmode', 'none'); input.blur(); refit(); }
 function openKeyboard(auto) { input.setAttribute('inputmode', 'text'); input.blur(); input.focus({ preventScroll: true }); showKeys(auto); }
 function primeKeyboard() { if (!kbOpen) { input.setAttribute('inputmode', 'none'); input.focus({ preventScroll: true }); } }
 function textFocus(on) {
