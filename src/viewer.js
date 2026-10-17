@@ -16,9 +16,21 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/
 #msg{color:var(--quiet);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
 button{background:none;border:1px solid var(--border);color:var(--text);border-radius:8px;height:32px;min-width:36px;padding:0 10px;font:inherit}
 button.on{border-color:var(--live);color:var(--live)}
-#stage{position:fixed;top:calc(44px + env(safe-area-inset-top));left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;touch-action:none}
+#bar{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+#stage{position:fixed;top:calc(44px + env(safe-area-inset-top));left:env(safe-area-inset-left);right:env(safe-area-inset-right);bottom:env(safe-area-inset-bottom);display:flex;align-items:center;justify-content:center;touch-action:none;overflow:hidden}
 #wrap{transform-origin:0 0}
-canvas{display:block;max-width:100vw;max-height:calc(100vh - 44px - env(safe-area-inset-top));width:auto;height:auto}
+canvas{display:block}
+#typepill{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);display:none;z-index:3;height:40px;padding:0 18px;border-radius:20px;border-color:var(--live);color:var(--live);background:var(--bar)}
+#typepill.show{display:block}
+/* Landscape on a phone: the bar becomes a column on the left, so the screen gets the full height */
+@media (orientation:landscape) and (max-height:500px){
+  #bar{top:0;bottom:0;left:0;right:auto;width:calc(52px + env(safe-area-inset-left));height:auto;flex-direction:column;align-items:center;gap:10px;padding:10px 0 10px env(safe-area-inset-left);border-bottom:none;border-right:1px solid var(--border)}
+  #msg{display:none}
+  button{min-width:40px;padding:0 6px}
+  #stage{top:0;left:calc(52px + env(safe-area-inset-left))}
+  #keys,#typepill{left:calc(52px + env(safe-area-inset-left))}
+  #typepill{transform:none;margin-left:12px}
+}
 #keys{position:fixed;left:0;right:0;bottom:0;display:none;gap:6px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:var(--bar);border-top:1px solid var(--border);overflow-x:auto;z-index:2}
 #keys.open{display:flex}
 #keys button{flex:none}
@@ -32,7 +44,8 @@ canvas{display:block;max-width:100vw;max-height:calc(100vh - 44px - env(safe-are
 <button data-key="Escape">esc</button><button data-key="Tab">tab</button><button data-key="Enter">&#8629;</button><button data-key="Backspace">&#9003;</button>
 <button data-key="ArrowLeft">&larr;</button><button data-key="ArrowUp">&uarr;</button><button data-key="ArrowDown">&darr;</button><button data-key="ArrowRight">&rarr;</button>
 </div>
-<input id="type" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
+<button id="typepill">&#9000; Type</button>
+<input id="type" inputmode="none" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
 <script>
 const $ = id => document.getElementById(id);
 const canvas = $('screen'), ctx = canvas.getContext('2d'), wrap = $('wrap'), stage = $('stage');
@@ -45,7 +58,7 @@ function makeDecoder(cfg) {
   if (decoder && decoder.state !== 'closed') decoder.close();
   decoder = new VideoDecoder({
     output: frame => {
-      if (canvas.width !== frame.displayWidth) { canvas.width = frame.displayWidth; canvas.height = frame.displayHeight; }
+      if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) { canvas.width = frame.displayWidth; canvas.height = frame.displayHeight; fit(); }
       ctx.drawImage(frame, 0, 0); frame.close();
     },
     error: e => { status('Decoder: ' + e.message, 'fail'); configured = false; waitingKey = true; send({ t: 'keyframe' }); },
@@ -64,6 +77,7 @@ function connect() {
       const m = JSON.parse(ev.data);
       if (m.error) status(m.error, 'fail');
       if ('dock' in m) $('dock').classList.toggle('on', m.dock);
+      if ('textFocus' in m) textFocus(m.textFocus);
       return;
     }
     const buf = new Uint8Array(ev.data), type = buf[0];
@@ -84,8 +98,23 @@ function connect() {
   ws.onclose = () => { status('Disconnected, reconnecting', 'fail'); configured = false; setTimeout(connect, 1500); };
 }
 
-// ---------- view: zoom and pan (local only) ----------
+// ---------- view: fit, zoom and pan (local only) ----------
 let zoom = 1, panX = 0, panY = 0;
+// The largest size with the screen's own proportions inside the space actually left on the phone (measured,
+// since 100vh in iOS landscape counts the toolbar and the notch). Run again on every rotation or resize.
+function fit() {
+  const w = stage.clientWidth, h = stage.clientHeight, ar = canvas.width / canvas.height;
+  if (!w || !h || !ar) return;
+  let cw = w, ch = w / ar;
+  if (ch > h) { ch = h; cw = h * ar; }
+  canvas.style.width = Math.floor(cw) + 'px'; canvas.style.height = Math.floor(ch) + 'px';
+  zoom = 1; panX = panY = 0; applyView();
+}
+let fitTimer;
+const refit = () => { clearTimeout(fitTimer); fitTimer = setTimeout(fit, 120); };   // iOS reports the new size a moment after rotating
+window.addEventListener('resize', refit);
+window.addEventListener('orientationchange', refit);
+if (window.visualViewport) visualViewport.addEventListener('resize', refit);
 function applyView() { wrap.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')'; $('fit').textContent = zoom > 1.01 ? 'fit' : '1:1'; }
 $('fit').onclick = () => {
   if (zoom > 1.01) { zoom = 1; panX = panY = 0; }
@@ -155,6 +184,7 @@ stage.addEventListener('touchend', e => {
     else if (!one.held && Date.now() - one.t0 < 450) {
       const p = toRemote(one.x0, one.y0);
       send({ t: 'move', ...p }); send(withMods({ t: 'down', ...p })); send({ t: 'up', ...p });
+      primeKeyboard();
     }
     clearMods(); one = null;
   }
@@ -172,12 +202,30 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 $('dock').onclick = () => send({ t: 'dock' });
 
 // ---------- keyboard ----------
+// iOS opens the keyboard only inside a tap, and the Mac says "a text field has focus" a moment after the tap.
+// So every tap focuses the hidden input with inputmode=none (no keyboard yet); when the Mac reports a text
+// field, inputmode switches to text, which brings the keyboard up on the input that already has focus. If iOS
+// does not (the screen did not shrink), a Type button appears instead: one tap. Opened by the Mac, the keyboard
+// also closes when focus leaves the text field; opened by hand (the keyboard button), it stays.
 const input = $('type');
-$('kb').onclick = () => {
-  const open = !$('keys').classList.contains('open');
-  $('keys').classList.toggle('open', open); $('kb').classList.toggle('on', open);
-  if (open) input.focus(); else input.blur();
-};
+let kbOpen = false, kbAuto = false;
+const keyboardUp = () => window.visualViewport && visualViewport.height < window.innerHeight * 0.8;
+function showKeys(auto) { $('keys').classList.add('open'); $('kb').classList.add('on'); kbOpen = true; kbAuto = auto; $('typepill').classList.remove('show'); }
+function hideKeys() { $('keys').classList.remove('open'); $('kb').classList.remove('on'); kbOpen = kbAuto = false; input.setAttribute('inputmode', 'none'); input.blur(); }
+function openKeyboard(auto) { input.setAttribute('inputmode', 'text'); input.blur(); input.focus({ preventScroll: true }); showKeys(auto); }
+function primeKeyboard() { if (!kbOpen) { input.setAttribute('inputmode', 'none'); input.focus({ preventScroll: true }); } }
+function textFocus(on) {
+  if (on && !kbOpen) {
+    input.setAttribute('inputmode', 'text');
+    showKeys(true);
+    setTimeout(() => { if (kbAuto && !keyboardUp()) $('typepill').classList.add('show'); }, 450);
+  } else if (!on) {
+    $('typepill').classList.remove('show');
+    if (kbAuto) hideKeys();
+  }
+}
+$('typepill').onclick = () => openKeyboard(true);
+$('kb').onclick = () => { if (kbOpen) hideKeys(); else openKeyboard(false); };
 document.querySelectorAll('[data-mod]').forEach(b => b.onclick = () => {
   const m = b.dataset.mod; mods.has(m) ? mods.delete(m) : mods.add(m); b.classList.toggle('on', mods.has(m)); input.focus();
 });

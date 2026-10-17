@@ -209,6 +209,41 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
 }
 let capture = Capture()
 
+// ---------- what has focus ----------
+// After a click or Tab, is a text field focused on the Mac? The viewer uses it to bring up the phone's keyboard.
+// A text control by role, or anything whose value can be set and that has a text selection (web text fields).
+enum Focus {
+    static let queue = DispatchQueue(label: "seer.focus")
+    static var last: Bool?
+    static func isText() -> Bool {
+        let sys = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(sys, 0.3)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(sys, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let ref = focused, CFGetTypeID(ref) == AXUIElementGetTypeID() else { return false }
+        let el = ref as! AXUIElement
+        AXUIElementSetMessagingTimeout(el, 0.3)
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
+        let role = (roleRef as? String) ?? ""
+        if ["AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXSecureTextField"].contains(role) { return true }
+        var settable = DarwinBoolean(false)
+        var range: CFTypeRef?
+        return AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
+            && AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &range) == .success
+    }
+    // Checked twice (apps take a moment to move focus); reported every time after a click, so the viewer can act.
+    static func checkSoon() {
+        for delay in [0.15, 0.5] {
+            queue.asyncAfter(deadline: .now() + delay) {
+                let text = isText()
+                if delay == 0.15 || text != last { link.status(["textFocus": text]) }
+                last = text
+            }
+        }
+    }
+}
+
 // ---------- input ----------
 enum Input {
     static var lastClick = (time: Date.distantPast, x: 0.0, y: 0.0, count: 0)
@@ -253,6 +288,7 @@ enum Input {
             e?.setIntegerValueField(.mouseEventClickState, value: Int64(right ? 1 : lastClick.count))
             e?.flags = flags(j)
             e?.post(tap: .cghidEventTap)
+            if !down && !right { Focus.checkSoon() }
         case "scroll":
             let dx = Int32((j["dx"] as? Double) ?? 0), dy = Int32((j["dy"] as? Double) ?? 0)
             CGEvent(scrollWheelEvent2Source: src, units: .pixel, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)?.post(tap: .cghidEventTap)
@@ -272,6 +308,7 @@ enum Input {
                 e?.flags = flags(j)
                 e?.post(tap: .cghidEventTap)
             }
+            if ["Tab", "Enter", "Escape"].contains(name) { Focus.checkSoon() }
         default: break
         }
     }
