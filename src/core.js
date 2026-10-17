@@ -3,6 +3,8 @@
 // Publishing fails closed. A preview's Access app (sign-in) is made BEFORE its tunnel route and DNS record, and
 // after publishing the link is fetched without a session: anything but a redirect to the Access login pulls the
 // route at once. A dev server must never be reachable from the internet without sign-in in front of it.
+import dns from 'node:dns';
+import https from 'node:https';
 import path from 'node:path';
 import { loadConfig, saveConfig, loadPreviews, savePreviews, withLock, cleanName, writeSecret } from './store.js';
 import * as dev from './devserver.js';
@@ -26,13 +28,26 @@ function routes(cfg, previews) {
 const syncRoutes = (cfg, previews) => cf.putIngress(cfg.accountId, cfg.tunnelId, routes(cfg, previews));
 
 // The link without a session must land on the Access login. 'protected' | 'pending' (DNS not live yet) | 'OPEN'.
+// Resolved through 1.1.1.1, not the Mac's resolver: macOS caches the "no such host" from the moments before the
+// record existed, and the check would then never see the new name.
+const publicDns = new dns.Resolver();
+publicDns.setServers(['1.1.1.1', '1.0.0.1']);
+function probe(host) {
+  return new Promise((resolve, reject) => {
+    const req = https.get({
+      host, path: '/', timeout: 8000,
+      lookup: (name, opts, cb) => publicDns.resolve4(name, (err, ips) => opts?.all ? cb(err, (ips || []).map(address => ({ address, family: 4 }))) : cb(err, ips?.[0], 4)),
+    }, res => { res.resume(); resolve({ status: res.statusCode, location: res.headers.location || '' }); });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
 export async function checkProtected(cfg, host) {
   for (let i = 0; i < 10; i++) {
     try {
-      const res = await fetch(`https://${host}/`, { redirect: 'manual', signal: AbortSignal.timeout(8000) });
-      const loc = res.headers.get('location') || '';
-      if (res.status >= 300 && res.status < 400 && /cloudflareaccess\.com/.test(loc)) return 'protected';
-      if (res.status === 200 || (res.status >= 300 && res.status < 400)) return 'OPEN';
+      const { status, location } = await probe(host);
+      if (status >= 300 && status < 400 && /cloudflareaccess\.com/.test(location)) return 'protected';
+      if (status === 200 || (status >= 300 && status < 400)) return 'OPEN';
     } catch {}                                 // not resolving yet
     await new Promise(r => setTimeout(r, 3000));
   }
