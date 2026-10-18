@@ -1,7 +1,7 @@
 // Seer home: the Mac's state, its instruments, stay awake, and the projects, in dark Liquid Glass (glass.js).
 // Labels stay lowercase and every element carries information: no taglines, no coaching copy.
 // The page renders itself from the status JSON and refreshes every 5 s; ping is timed from the phone.
-import { GLASS_CSS, MARK, BACKDROP, GEAR } from './glass.js';
+import { GLASS_CSS, MARK, BACKDROP, GEAR, BACK } from './glass.js';
 
 export function homePage(initial, appHead) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -44,6 +44,23 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .proj .meta{margin-top:2px;font:500 12px var(--mono);color:var(--ink3)}
 .proj .go{width:8px;height:8px;border-right:2px solid var(--ink3);border-top:2px solid var(--ink3);transform:rotate(45deg);margin-right:4px}
 .empty{font:500 13px var(--mono);color:var(--ink3);padding:16px;margin:0}
+/* opening a project: an iOS push. A glass sheet slides over from the right while the page under it slides a
+   third of the way left and dims; the project loads behind the sheet, which stays until it arrives. */
+main{transition:transform .5s cubic-bezier(.32,.72,0,1),filter .5s}
+body.pushed main{transform:translateX(-30%);filter:brightness(.45)}
+.push{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;transform:translateX(100%);visibility:hidden;
+  transition:transform .5s cubic-bezier(.32,.72,0,1),visibility 0s .5s;
+  background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.015) 40%),rgba(6,10,8,.72);
+  -webkit-backdrop-filter:blur(30px) saturate(170%);backdrop-filter:blur(30px) saturate(170%);
+  box-shadow:-24px 0 60px rgba(0,0,0,.6),inset 1px 0 0 rgba(255,255,255,.14)}
+body.pushed .push{transform:none;visibility:visible;transition:transform .5s cubic-bezier(.32,.72,0,1)}
+.push .bar{position:relative;top:auto;margin:calc(10px + env(safe-area-inset-top)) 14px 0;padding-left:7px}
+.push .bar .title{flex:1;text-align:center;margin-right:38px;font:650 17px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.push .wait{flex:1;display:grid;place-items:center}
+.push .wait svg{width:96px;height:70px;opacity:0;transition:opacity .3s .35s}
+body.pushed .push .wait svg{opacity:1}
+.push .wait .spokes{transform-box:view-box;transform-origin:512px 512px;animation:spin 1s steps(8) infinite}
+@media (prefers-reduced-motion: reduce){main,.push{transition:none!important}}
 </style></head><body>
 ${BACKDROP}
 <main>
@@ -80,6 +97,10 @@ ${BACKDROP}
 <div class="sect">projects</div>
 <div class="glass list" id="projects"></div>
 </main>
+<div class="push" id="push" aria-hidden="true">
+  <header class="glass bar"><button class="icon-btn" id="push-back" aria-label="Back" style="border:0">${BACK}</button><span class="title" id="push-t"></span></header>
+  <div class="wait">${MARK.replace('id="pupil"', 'class="spokes"')}</div>
+</div>
 <script>
 const $ = id => document.getElementById(id);
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -186,6 +207,19 @@ $('sleep-b').onclick = async () => {
     $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'since ' + clockOf(Date.now()); $('why').hidden = false; $('count').hidden = true;
   } catch { b.disabled = false; b.textContent = 'Sleep now'; }
 };
+
+// Opening a project slides a sheet over (see .push); the project starts loading the moment it is tapped.
+$('projects').addEventListener('click', e => {
+  const a = e.target.closest('a.proj');
+  if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  e.preventDefault();
+  $('push-t').textContent = a.querySelector('.nm').textContent;
+  document.body.classList.add('pushed');
+  setTimeout(() => { location.href = a.href; }, 60);     // a frame for the slide to start before the browser gets busy
+});
+const unpush = () => document.body.classList.remove('pushed');
+$('push-back').onclick = () => { window.stop(); unpush(); };
+window.addEventListener('pageshow', e => { if (e.persisted) requestAnimationFrame(unpush); });   // back from a project
 
 render(); refresh();
 setInterval(tick, 1000);
