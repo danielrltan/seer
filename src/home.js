@@ -96,7 +96,7 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .list{border-radius:24px;overflow:hidden}
 .proj{display:flex;align-items:center;gap:13px;padding:14px 16px;position:relative}
 .proj+.proj:before{content:'';position:absolute;left:37px;right:0;top:0;border-top:1px solid var(--hair)}
-.proj:active{background:rgba(255,255,255,.06)}
+.proj:active,.proj.pressed{background:rgba(255,255,255,.06)}
 .proj .main{flex:1;min-width:0}
 .proj .nm{font:600 16.5px/1.25 var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .proj .meta{margin-top:2px;font:500 12px var(--mono);color:var(--ink3)}
@@ -155,7 +155,8 @@ body.short-vp .tabs{bottom:12px}
   font:600 10.5px var(--sans);cursor:pointer;transition:color .25s}
 .tabs button svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .tabs button.on{color:var(--live);text-shadow:0 0 12px var(--glow)}
-.tabs button:active svg{transform:scale(.9)}
+.tabs button svg{transition:transform .22s cubic-bezier(.3,1.4,.5,1)}
+.tabs button:active svg,.tabs button.pressed svg{transform:scale(.86);transition-duration:.05s}.tabs button.pressed{color:var(--ink)}
 .tabs .badge{position:absolute;top:5px;left:calc(50% + 7px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;
   background:var(--live);color:#02170b;font:700 10.5px/16px var(--round);text-align:center;box-shadow:0 0 10px var(--glow)}
 .tabs .badge.amber{background:var(--amber);box-shadow:0 0 10px var(--amber)}

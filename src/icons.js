@@ -17,7 +17,15 @@ export const MANIFEST = JSON.stringify({
 });
 const MANIFEST_V = crypto.createHash('sha256').update(MANIFEST).digest('hex').slice(0, 10);
 // Every page also installs Seer's service worker (src/asleep.js): the asleep page when the Mac cannot be reached.
-export const ICON_HEAD = `<script>navigator.serviceWorker && navigator.serviceWorker.register('/sw.js').catch(() => {})</script><link rel="manifest" href="/manifest.webmanifest?v=${MANIFEST_V}"><link rel="apple-touch-icon" href="/icon-180.png?v=${ICON_V}"><link rel="icon" href="/favicon.svg?v=${ICON_V}" type="image/svg+xml"><link rel="icon" href="/icon-32.png?v=${ICON_V}" sizes="32x32" type="image/png">`;
+export const ICON_HEAD = `<script>navigator.serviceWorker && navigator.serviceWorker.register('/sw.js').catch(() => {});
+// Pressed: what is under a finger gets .pressed (at least 120 ms, so a quick tap shows), caught before any handler
+// can cancel the press; iOS shows :active unreliably, and not at all where a page prevents the pointerdown.
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest && e.target.closest('button,a.btn,.mon,.proj,.key'); if (!b) return;
+  const t = Date.now(); b.classList.add('pressed');
+  const up = () => { setTimeout(() => b.classList.remove('pressed'), Math.max(0, 120 - (Date.now() - t))); removeEventListener('pointerup', up, true); removeEventListener('pointercancel', up, true); };
+  addEventListener('pointerup', up, true); addEventListener('pointercancel', up, true);
+}, true);</script><link rel="manifest" href="/manifest.webmanifest?v=${MANIFEST_V}"><link rel="apple-touch-icon" href="/icon-180.png?v=${ICON_V}"><link rel="icon" href="/favicon.svg?v=${ICON_V}" type="image/svg+xml"><link rel="icon" href="/icon-32.png?v=${ICON_V}" sizes="32x32" type="image/png">`;
 // The typeface: Plus Jakarta Sans (SIL OFL, assets/fonts/OFL.txt), a geometric sans with its own quirks.
 export const FONT_V = crypto.createHash('sha256').update(read('fonts/jakarta.woff2')).digest('hex').slice(0, 10);
 export const FONT_URL = `/font/jakarta.woff2?v=${FONT_V}`;

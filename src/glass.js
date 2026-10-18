@@ -38,7 +38,9 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
 .bar .title{font:650 17px var(--sans)}
 .bar .clock{margin-left:auto;font:600 14px var(--round);color:var(--ink2);font-variant-numeric:tabular-nums}
 .icon-btn{width:38px;height:38px;border-radius:19px;display:grid;place-items:center;color:var(--ink);background:rgba(255,255,255,.07);box-shadow:inset 0 1px 0 rgba(255,255,255,.12);flex:none}
-.icon-btn:active{background:rgba(255,255,255,.14)}
+/* pressed (:active, or .pressed from ICON_HEAD's script, which iOS needs): in quickly, back with a little spring */
+.icon-btn{transition:transform .22s cubic-bezier(.3,1.4,.5,1),background-color .2s}
+.icon-btn:active,.icon-btn.pressed{transform:scale(.88);background:rgba(255,255,255,.2);transition-duration:.05s}
 .chip{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 11px;border-radius:13px;background:rgba(255,255,255,.07);font:600 12px var(--sans);color:var(--ink2)}
 .pip{width:8px;height:8px;border-radius:50%;flex:none;background:rgba(255,255,255,.25)}
 .pip.on{background:var(--live);box-shadow:0 0 10px var(--glow)}.pip.red{background:var(--red);box-shadow:0 0 10px var(--red)}
@@ -50,7 +52,10 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
 /* buttons: glass capsules; .tint is the green one */
 .btn{position:relative;height:40px;padding:0 18px;border:0;border-radius:20px;color:#fff;font:600 14.5px var(--sans);cursor:pointer;
   background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 6px 16px rgba(0,0,0,.35)}
-.btn:active{transform:scale(.97)}
+.btn{transition:transform .22s cubic-bezier(.3,1.4,.5,1),filter .2s,background-color .2s}
+.btn:active,.btn.pressed{transform:scale(.94);filter:brightness(1.35);transition-duration:.05s}
+.btn:not(.tint):active,.btn:not(.tint).pressed{background:rgba(255,255,255,.2)}
+.btn:disabled:active,.btn:disabled.pressed{transform:none;filter:none}
 .btn.tint{background:linear-gradient(160deg,rgba(43,240,138,.42),rgba(43,240,138,.16));color:#eafff3;text-shadow:0 0 12px var(--glow);
   box-shadow:inset 0 1px 0 rgba(200,255,225,.4),0 0 0 .5px rgba(43,240,138,.5),0 6px 18px rgba(43,240,138,.18)}
 .btn.warn{background:rgba(255,90,95,.16);color:#ffd9da}

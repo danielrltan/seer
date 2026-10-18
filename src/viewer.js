@@ -76,7 +76,7 @@ canvas{display:block}
 /* the controls: one glass capsule of round glass buttons */
 #bar{display:flex;align-items:center;gap:3px;padding:6px;border-radius:28px;max-width:100%}
 #bar .icon-btn{flex:0 1 40px;min-width:32px;width:40px;height:40px;border-radius:20px;color:var(--ink2);background:none;box-shadow:none;transition:background .15s,color .15s,box-shadow .15s}
-#bar .icon-btn:active,.key:active{background:rgba(255,255,255,.16)}
+#bar .icon-btn:active,.key:active,#bar .icon-btn.pressed,.key.pressed{background:rgba(255,255,255,.16)}
 #bar .icon-btn.on{color:#eafff3;background:linear-gradient(160deg,rgba(43,240,138,.46),rgba(43,240,138,.16));
   box-shadow:inset 0 1px 0 rgba(200,255,225,.42),0 0 0 .5px rgba(43,240,138,.55),0 0 16px rgba(43,240,138,.24)}
 #bar .icon-btn.on svg{filter:drop-shadow(0 0 5px var(--glow))}
@@ -94,7 +94,7 @@ canvas{display:block}
 #typepill{position:absolute;z-index:3;left:50%;bottom:calc(100% + 16px);transform:translateX(-50%);display:none;width:58px;height:58px;border-radius:29px;place-items:center;color:#eafff3;
   background:linear-gradient(160deg,rgba(43,240,138,.5),rgba(43,240,138,.18)),rgba(8,14,11,.6);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
   box-shadow:inset 0 1px 0 rgba(200,255,225,.45),0 0 0 .5px rgba(43,240,138,.6),0 0 28px rgba(43,240,138,.35),0 10px 30px rgba(0,0,0,.5)}
-#typepill.show{display:grid}
+#typepill.show{display:grid}#typepill.pressed{filter:brightness(1.35)}
 #typepill svg{filter:drop-shadow(0 0 6px var(--glow))}
 #type{position:fixed;left:-1000px;top:0;opacity:0;font-size:16px}
 /* Landscape on a phone: the screen fills the height, the controls are a glass rail on the left and the key bar a
