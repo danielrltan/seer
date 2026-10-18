@@ -24,6 +24,7 @@ ${appHead}
 @keyframes idle{50%{opacity:.55;text-shadow:0 0 22px rgba(255,196,77,.35)}}
 .eye.big.idling .open{animation:blink 4.6s ease-in-out infinite}
 @keyframes blink{0%,84%,92%,100%{transform:none}86%,90%{transform:scaleY(.08)}88%{transform:scaleY(.9)}}
+.eye.big.idling #pupil{stroke:var(--amber);transition:stroke .4s}
 #count.idle .track i{background:var(--amber);box-shadow:0 0 12px rgba(255,196,77,.4)}
 @media (prefers-reduced-motion: reduce){.state.idle,.eye.big.idling .open{animation:none}}
 .why{font-size:15px;color:var(--ink2)}
