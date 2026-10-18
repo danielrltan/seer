@@ -55,6 +55,9 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
   box-shadow:inset 0 1px 0 rgba(200,255,225,.4),0 0 0 .5px rgba(43,240,138,.5),0 6px 18px rgba(43,240,138,.18)}
 .btn.warn{background:rgba(255,90,95,.16);color:#ffd9da}
 .btns{display:flex;gap:8px}
+/* an icon leads a button's word when it says what the button does */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.btn svg{flex:none;width:17px;height:17px;margin-left:-3px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 /* slider: a sunken track, a green fill, a round glass knob */
 .slider{-webkit-appearance:none;appearance:none;width:100%;height:36px;margin:10px 0 8px;background:transparent;--p:36%}
 .slider::-webkit-slider-runnable-track{height:8px;border-radius:4px;box-shadow:inset 0 1px 2px rgba(0,0,0,.6);
@@ -100,6 +103,18 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
 .backdrop:after{content:'';position:absolute;inset:0;background:radial-gradient(130% 90% at 50% 46%,transparent 40%,rgba(0,0,0,.6) 100%)}
 @media (prefers-reduced-motion: reduce){.backdrop .fly,.orb,#pupil.spin{animation:none}.eye *{transition:none!important}}
 `;
+
+// Icons that lead the words of action buttons, drawn like the rest: 24-unit grid, round 2-unit strokes.
+const ic = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+export const BTN = {
+  sleep: ic('<path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.8 7.8 0 1 0 10.1 10.1Z"/>'),
+  wake: ic('<circle cx="12" cy="12" r="3.8"/><path d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M5.5 18.5l1.4-1.4M17.1 6.9l1.4-1.4"/>'),
+  cup: ic('<path d="M4.5 9.5h11v4.5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5Z"/><path d="M15.5 11h1.3a2.6 2.6 0 0 1 0 5.2h-1.6M8.5 3.8v2.4M11.5 3.8v2.4"/>'),
+  cancel: ic('<path d="M7 7l10 10M17 7 7 17"/>'),
+  open: ic('<path d="M8 16 16.5 7.5M9.5 7.5h7v7"/>'),
+  save: ic('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+  install: ic('<path d="M12 4v10.5M7.5 10 12 14.5 16.5 10M5 19.5h14"/>'),
+};
 
 // The eye with a spinner for a pupil (eight spokes, fading behind the lead one).
 export const MARK = (() => {

@@ -1,7 +1,7 @@
 // Seer's Settings page, for the phone and the Mac: grouped glass lists in the manner of iOS Settings, in the dark
 // Liquid Glass of glass.js. Every control saves the moment it changes (sliders when let go) and shows what the
 // Mac now holds; a refused save puts the control back and says why on its row.
-import { GLASS_CSS, BACKDROP, BACK } from './glass.js';
+import { GLASS_CSS, BACKDROP, BACK, BTN } from './glass.js';
 
 export function settingsPage(initial, appHead) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -69,8 +69,8 @@ ${BACKDROP}
 <div class="sect">network</div>
 <div class="glass group">
   <label class="row"><span class="l">Hotspot backup<span class="d" id="hotspotFailover-d"></span></span><input type="checkbox" class="switch" data-k="hotspotFailover"></label>
-  <div class="row"><input class="text" id="ssid" placeholder="Hotspot name" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="ssid-b" hidden>Save</button></div>
-  <div class="row"><input class="text" id="pw" type="password" placeholder="Password" autocomplete="new-password"><button class="btn" id="pw-b" hidden>Save</button></div>
+  <div class="row"><input class="text" id="ssid" placeholder="Hotspot name" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="ssid-b" hidden>${BTN.save}<span>Save</span></button></div>
+  <div class="row"><input class="text" id="pw" type="password" placeholder="Password" autocomplete="new-password"><button class="btn" id="pw-b" hidden>${BTN.save}<span>Save</span></button></div>
   <div class="row" id="net-d-row" hidden><span class="l"><span class="d" id="hotspotSsid-d" style="margin:0"></span></span></div>
 </div>
 
@@ -87,7 +87,7 @@ ${BACKDROP}
 
 <div class="sect">agents</div>
 <div class="glass group">
-  <div class="row"><span class="l">Claude Code hooks<span class="d" id="hooks-d"></span></span><span class="val" id="hooks-v"></span><button class="btn tint" id="hooks-b" hidden>Install</button></div>
+  <div class="row"><span class="l">Claude Code hooks<span class="d" id="hooks-d"></span></span><span class="val" id="hooks-v"></span><button class="btn tint" id="hooks-b" hidden>${BTN.install}<span>Install</span></button></div>
 </div>
 
 <div class="sect">app</div>

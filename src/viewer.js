@@ -6,7 +6,7 @@
 // Upright, the screen sits at the top and the space under it is a trackpad (trackpad.js); on its side the
 // screen fills the height and the controls are a glass rail on the left. Dark Liquid Glass (glass.js).
 import { ICON_HEAD } from './icons.js';
-import { GLASS_CSS, BACK } from './glass.js';
+import { GLASS_CSS, BACK, BTN } from './glass.js';
 import { TRACKPAD_JS } from './trackpad.js';
 
 // One icon style for every control: 24-unit grid, 1.7 stroke, round caps and joins (as glass.js's gear and back).
@@ -120,7 +120,7 @@ canvas{display:block}
 }
 </style></head><body>
 <div id="app">
-<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="msg" class="glass">Connecting</div><button class="btn tint" id="wake" hidden>Wake</button></div>
+<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="msg" class="glass">Connecting</div><button class="btn tint" id="wake" hidden>${BTN.wake}<span>Wake</span></button></div>
 <div id="pad" class="glass"><i class="groove l" id="groove-l"></i><i class="groove r" id="groove-r"></i></div>
 <div id="foot">
 <div id="keys" class="glass">${KEYS.map(([k, l]) => `<button class="key" data-key="${k}" aria-label="${k}">${l}</button>`).join('')}</div>

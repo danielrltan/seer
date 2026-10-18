@@ -157,6 +157,7 @@ export function runningAgents(now = Date.now()) {
       const bridge = typeof s.bridge === 'string' && /^session_[A-Za-z0-9]{8,64}$/.test(s.bridge) ? s.bridge : null;
       const dir = s.cwd && s.cwd !== os.homedir() ? s.cwd.replace(os.homedir(), '~') : '';
       out.push({
+        kind: 'claude',                                        // which agent: only Claude Code is read so far
         name: String(s.name || 'session').slice(0, 60), dir: dir.slice(0, 80),
         busy: working, waiting, since: s.since,
         url: bridge ? `https://claude.ai/code/${bridge}` : null,

@@ -2,7 +2,7 @@
 // (the Mac's screen and the projects) and Agents (Claude Code sessions). Dark Liquid Glass (glass.js).
 // Labels stay lowercase and every element carries information: no taglines, no coaching copy.
 // The page renders itself from the status JSON and refreshes every 5 s; ping is timed from the phone.
-import { GLASS_CSS, MARK, BACKDROP, GEAR, BACK } from './glass.js';
+import { GLASS_CSS, MARK, BACKDROP, GEAR, BACK, BTN } from './glass.js';
 
 export function homePage(initial, appHead) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -61,7 +61,11 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .mon .ic .pip{position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border:2.5px solid #0a0f0d}
 .mon .nm{font-size:17.5px;font-weight:650}
 .mon .meta{margin-top:3px}
-.proj .view{height:32px;padding:0 14px;display:inline-grid;place-items:center;font-size:13.5px;flex:none}
+.proj .view{height:34px;padding:0 12px 0 15px;display:inline-flex;font-size:13.5px;flex:none;gap:4px}.proj .view svg{width:15px;height:15px;margin:0 -2px 0 0}
+/* agents: each one's own mark in its tile (kind from agents.js), not tinted green like a live monitor */
+.agent .ic{color:inherit}
+.agent.live .ic{background:linear-gradient(160deg,rgba(255,255,255,.13),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 .5px rgba(255,255,255,.06),0 4px 12px rgba(0,0,0,.3)}
+.agent .ic svg.mark{width:28px;height:28px;stroke:none}
 main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
 /* tabs: one pane at a time, switched at once as iOS tab bars do (fading a pane in leaves its glass unblurred
    until the fade ends) */
@@ -125,7 +129,7 @@ ${BACKDROP}
 <div class="pane on" id="p-home">
 <section class="glass hero">
   <div class="top"><span class="k">mac</span><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span></div>
-  <div class="foot"><div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div><button class="btn" id="sleep-b">Sleep now</button></div>
+  <div class="foot"><div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep now</span></button></div>
   <div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div>
 </section>
 
@@ -140,7 +144,7 @@ ${BACKDROP}
 
 <section class="glass stay">
   <div class="row"><span class="k">stay awake <span id="stay-now"></span></span><span class="amt" id="stay-amt">1 h</span></div>
-  <div class="row r2"><input class="slider" type="range" id="stay-r" min="0" max="11" value="4" aria-label="How long to stay awake"><span class="btns"><button class="btn" id="stay-x" hidden>Cancel</button><button class="btn tint" id="stay-b">Start</button></span></div>
+  <div class="row r2"><input class="slider" type="range" id="stay-r" min="0" max="11" value="4" aria-label="How long to stay awake"><span class="btns"><button class="btn" id="stay-x" hidden>${BTN.cancel}<span>Cancel</span></button><button class="btn tint" id="stay-b">${BTN.cup}<span>Start</span></button></span></div>
 </section>
 
 </div>
@@ -180,6 +184,13 @@ function tick() {                                       // the clock and the cou
     $('count-i').style.width = Math.max(2, Math.min(100, (until - now) / span * 100)) + '%';
   }
 }
+
+// Each agent's mark, by the kind agents.js reports; one it does not know gets a plain spark.
+const AGENT = {
+  claude: '<svg class="mark" viewBox="0 0 24 24"><g fill="#d97757">' + [11, 9.2, 10.4, 8.6, 11.1, 9.5, 10.2, 8.8, 10.8, 9.3, 10.5, 8.7].map((len, i) =>
+    '<rect x="10.9" y="' + (12 - len) + '" width="2.3" height="' + (len - 0.4) + '" rx="1.15" transform="rotate(' + (i * 30 + (i % 2) * 5) + ' 12 12)"/>').join('') + '</g></svg>',
+  other: '<svg viewBox="0 0 24 24"><path d="M12 4.5c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7Z"/></svg>',
+};
 
 // What each monitor is: the Mac (a laptop has a lid; a desktop Mac reports none), a web project on it, a cloud copy.
 const ICON = {
@@ -224,9 +235,10 @@ function render() {
   $('ag-badge').hidden = !(working || waiting);
   $('ag-badge').textContent = waiting || working;                // one needing you outranks the count working
   $('ag-badge').className = 'badge' + (waiting ? ' amber' : '');
-  $('agents').innerHTML = ag.length ? ag.map(g => '<div class="proj"><span class="pip ' + (g.waiting ? 'amber' : g.busy ? 'on pulse' : '') + '"></span>'
+  $('agents').innerHTML = ag.length ? ag.map(g => '<div class="proj mon agent' + (g.busy ? ' live' : '') + '"><span class="ic">' + (AGENT[g.kind] || AGENT.other)
+    + '<i class="pip ' + (g.waiting ? 'amber' : g.busy ? 'on pulse' : '') + '"></i></span>'
     + '<div class="main"><div class="nm">' + esc(g.name) + '</div><div class="meta">' + esc([g.waiting ? 'needs you' : g.busy ? 'working' : 'idle ' + ago(g.since), g.dir].filter(Boolean).join(' · ')) + '</div></div>'
-    + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View</a>' : '') + '</div>').join('') : '<p class="empty">no agents</p>';
+    + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View${BTN.open}</a>' : '') + '</div>').join('') : '<p class="empty">no agents</p>';
   // projects
   const rows = (st.desktop ? [{ name: 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
@@ -275,16 +287,16 @@ let armed = 0;
 $('sleep-b').onclick = async () => {
   const b = $('sleep-b');
   if (Date.now() > armed) {
-    armed = Date.now() + 3000; b.textContent = 'Tap again'; b.classList.add('armed');
-    setTimeout(() => { if (Date.now() > armed) { b.textContent = 'Sleep now'; b.classList.remove('armed'); } }, 3100);
+    armed = Date.now() + 3000; b.lastChild.textContent = 'Tap again'; b.classList.add('armed');
+    setTimeout(() => { if (Date.now() > armed) { b.lastChild.textContent = 'Sleep now'; b.classList.remove('armed'); } }, 3100);
     return;
   }
-  armed = 0; b.classList.remove('armed'); b.disabled = true; b.textContent = 'Sleeping';
+  armed = 0; b.classList.remove('armed'); b.disabled = true; b.lastChild.textContent = 'Sleeping';
   try {
     const r = await fetch('/sleep', { method: 'POST' });
     if (!r.ok) throw new Error();
     $('eye').classList.add('asleep'); $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'since ' + clockOf(Date.now()); $('why').hidden = false; $('count').hidden = true;
-  } catch { b.disabled = false; b.textContent = 'Sleep now'; }
+  } catch { b.disabled = false; b.lastChild.textContent = 'Sleep now'; }
 };
 
 // Opening a project slides a sheet over (see .push); the project starts loading the moment it is tapped.
