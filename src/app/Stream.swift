@@ -649,12 +649,15 @@ enum Pad {
     static var asking = false, askLater = false, askedAt = 0.0, epoch = 0
     static var drifting = false                       // the magnet is moving the pointer: the pump keeps running
     static var pulled = 0.0                           // points the magnet has moved it toward this target
+    static var gain = 1.0, gainAt = 0.0               // the friction actually applied, eased (a step in speed reads as a stutter)
     // Friction: full below frictionFrom, fading out by frictionTo (points per ms, after the phone's acceleration:
-    // a slow precise finger is 0.05-0.25, a 0.3 px/ms finger 0.8, a flick 2-4). The magnet acts below pullBelow,
-    // at most pullStep a tick (per 8 ms) and maxPull in all per target, and only within pullFor of the last nudge.
+    // a slow precise finger is 0.05-0.25, a 0.3 px/ms finger 0.8, a flick 2-4). The magnet acts once the finger is
+    // still (stoppedFor), at most pullStep a tick (per 8 ms) and maxPull in all per target, and only within pullFor of the last nudge.
     static let frictionGain = 0.5, frictionFrom = 0.25, frictionTo = 0.8
-    static let pullBelow = 0.2, pullShare = 0.2, pullStep = 1.5, maxPull = 12.0, pullFor = 0.6, reach = 6.0
-    static let askEvery = 0.04, freshFor = 0.5        // at most 25 hit tests a second; an answer older is ignored
+    static let pullShare = 0.2, pullStep = 1.5, maxPull = 12.0, pullFor = 0.6, reach = 6.0
+    static let gainEase = 70.0                        // ms: how fast the friction eases in and out
+    static let stoppedFor = 0.08                      // the magnet waits until the finger has been still this long
+    static let askEvery = 0.08, freshFor = 0.5        // at most 12 hit tests a second (each one costs the app under it); an answer older is ignored
 
     static func now() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1e9 }
     static var busy: Bool { !moves.isEmpty || !scrolls.isEmpty || ending || gliding || drifting }
@@ -737,15 +740,23 @@ enum Pad {
     }
 
     // The gain for this nudge: 1 unless the pointer is (heading) onto a target and the finger is slow.
+    // Eased toward its aim over gainEase ms rather than switched: the hit test answers a moment late, and a jump
+    // from full speed to half (or back) at a button's edge feels like the pointer catching.
     static func friction() -> Double {
-        guard onTarget(CGPoint(x: cursor.x + moves.x, y: cursor.y + moves.y), slack: 2) != nil else { return 1 }
-        let t = min(max((hypot(vel.x, vel.y) - frictionFrom) / (frictionTo - frictionFrom), 0), 1)
-        return frictionGain + (1 - frictionGain) * t * t * (3 - 2 * t)
+        var aim = 1.0
+        if onTarget(CGPoint(x: cursor.x + moves.x, y: cursor.y + moves.y), slack: 2) != nil {
+            let t = min(max((hypot(vel.x, vel.y) - frictionFrom) / (frictionTo - frictionFrom), 0), 1)
+            aim = frictionGain + (1 - frictionGain) * t * t * (3 - 2 * t)
+        }
+        let t = now(), dt = (t - gainAt) * 1000
+        gain = dt > 150 ? aim : gain + (aim - gain) * (1 - exp(-dt / gainEase))   // a new movement starts at its aim
+        gainAt = t
+        return gain
     }
 
     // A click, a scroll, a reset or the setting off: what was under the pointer may have changed or moved, and an
     // answer still on its way is for the old state (epoch).
-    static func forget() { target = nil; drifting = false; pulled = 0; epoch += 1 }
+    static func forget() { target = nil; drifting = false; pulled = 0; gain = 1; epoch += 1 }
 
     // Ask what is under the pointer: at most every askEvery, one question at a time, and once more where it
     // comes to rest (with the probes around it, for a target just short of the pointer).
@@ -778,8 +789,13 @@ enum Pad {
     // One tick of the magnet: toward the target's centre band (its middle, past min(30%, 8 pt) from each edge),
     // a share of the way each tick, capped, and not on an axis the finger was leaving it along. False when done.
     static func pull(_ dt: Double) -> Bool {
-        guard !touching, !ending, !gliding, scrolls.isEmpty, pulled < maxPull, now() - nudgedAt < pullFor,
-              fingerSpeed < pullBelow, let f = onTarget(cursor, slack: reach) else { return false }
+        // Only once the finger is still: pulling under a moving finger fights it, and that reads as a stutter.
+        let still = now() - nudgedAt
+        guard !touching, !ending, !gliding, scrolls.isEmpty, moves.isEmpty, pulled < maxPull, still >= stoppedFor,
+              still < pullFor, let f = onTarget(cursor, slack: reach) else {
+            // Just stopped on (or near) something: keep the pump going the few ms until the finger counts as still.
+            return still < stoppedFor && magnet && held == nil && moves.isEmpty && target != nil && !touching && !gliding
+        }
         func off(_ c: Double, _ lo: Double, _ hi: Double, _ d: Double) -> Double {
             let m = min((hi - lo) * 0.3, 8), a = lo + m, b = hi - m
             let o = c < a ? a - c : c > b ? b - c : 0
