@@ -68,7 +68,8 @@ function prepareContext(name, dir, { start, build, port, idleMin }) {
     fs.mkdirSync(path.dirname(path.join(ctx, rel)), { recursive: true });
     fs.copyFileSync(src, path.join(ctx, rel));
   }
-  fs.copyFileSync(GATE, path.join(ctx, '.seer-gate.mjs'));
+  fs.rmSync(path.join(ctx, '.dockerignore'), { force: true });   // only git-tracked files are shipped already; the project's own ignore list could drop the gate
+  fs.copyFileSync(GATE, path.join(ctx, 'seer-gate.mjs'));
   fs.writeFileSync(path.join(ctx, 'Dockerfile.seer'), [
     'FROM node:22-slim',
     'WORKDIR /app',
@@ -76,7 +77,7 @@ function prepareContext(name, dir, { start, build, port, idleMin }) {
     'RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; elif [ -f package.json ]; then npm install --no-audit --no-fund; fi',
     ...(build ? [`RUN ${build}`] : []),
     'ENV NODE_ENV=production',
-    'CMD ["node", "/app/.seer-gate.mjs"]',
+    'CMD ["node", "/app/seer-gate.mjs"]',
     '',
   ].join('\n'));
   fs.writeFileSync(path.join(ctx, 'fly.seer.toml'), `app = "${appName(name)}"

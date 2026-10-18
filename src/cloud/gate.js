@@ -17,7 +17,7 @@ const CMD = process.env.SEER_START;
 if (!KEY || !CMD) { console.error('seer-gate: SEER_KEY and SEER_START are required'); process.exit(1); }
 
 const started = Date.now();
-let lastRequest = Date.now();
+let lastRequest = Date.now(), served = false;   // served: a request with the key has come since the machine started
 const app = spawn('/bin/sh', ['-c', CMD], { stdio: 'inherit', env: { ...process.env, PORT: String(APP_PORT) } });
 app.on('exit', code => { console.log(`seer-gate: app exited (${code}); stopping`); process.exit(0); });
 
@@ -29,7 +29,10 @@ function stop(why) {
 setInterval(() => {
   if (Date.now() - started > MAX_MS) stop(`reached the ${MAX_MS / 60_000} min limit`);
   else if (Date.now() - lastRequest > IDLE_MS) stop(`no requests for ${IDLE_MS / 60_000} min`);
-}, 30_000);
+  // Woken only by requests without the key (a scanner on the public Fly address): Fly starts the machine before
+  // the gate can refuse, so do not keep it up for the whole idle window.
+  else if (!served && Date.now() - started > 60_000) stop('woken without the key; nothing to serve');
+}, 15_000);
 
 const keyOk = req => {
   const got = Buffer.from(String(req.headers['x-seer-key'] || '')), want = Buffer.from(KEY);
@@ -50,7 +53,7 @@ async function appReady(ms = 60_000) {
 
 const server = http.createServer(async (req, res) => {
   if (!keyOk(req)) { res.writeHead(404); return res.end(); }
-  lastRequest = Date.now();
+  lastRequest = Date.now(); served = true;
   if (!(await appReady())) { res.writeHead(503, { 'content-type': 'text/plain' }); return res.end('The project did not start. Check its log with seer status.'); }
   const up = http.request({ host: '127.0.0.1', port: APP_PORT, method: req.method, path: req.url, headers: strip(req.headers) }, r => {
     res.writeHead(r.statusCode, r.headers);
@@ -63,7 +66,7 @@ const server = http.createServer(async (req, res) => {
 // Websockets (a game server, live updates): same key check, then the raw connection is joined to the app.
 server.on('upgrade', async (req, socket, head) => {
   if (!keyOk(req)) return socket.destroy();
-  lastRequest = Date.now();
+  lastRequest = Date.now(); served = true;
   if (!(await appReady())) return socket.destroy();
   const up = net.connect(APP_PORT, '127.0.0.1', () => {
     const lines = [`${req.method} ${req.url} HTTP/1.1`, ...Object.entries(strip(req.headers)).map(([k, v]) => `${k}: ${v}`), '', ''];
