@@ -262,7 +262,8 @@ stage.addEventListener('touchend', e => {
     if (one.mode === 'drag') send({ t: 'up', ...toRemote(one.x, one.y) });
     else if (one.mode === 'scroll') { if (performance.now() - one.tm < 80) startGlide(one.vx, one.vy); }
     else if (!one.mode && Date.now() - one.t0 < 650) {
-      const p = toRemote(one.x0, one.y0);
+      // The second tap of a double tap lands exactly on the first: the Mac counts a double click only when close.
+      const p = one.afterTap ? toRemote(lastTap.x, lastTap.y) : toRemote(one.x0, one.y0);
       send({ t: 'move', ...p }); send(withMods({ t: 'down', ...p })); send({ t: 'up', ...p });   // two in a row: the Mac counts a double click
       lastTap = one.afterTap ? { t: 0, x: 0, y: 0 } : { t: Date.now(), x: one.x0, y: one.y0 };
       primeKeyboard();
