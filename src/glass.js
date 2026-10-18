@@ -60,11 +60,12 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
 .btn svg{flex:none;width:17px;height:17px;margin-left:-3px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 /* slider: a sunken track, a green fill, a round glass knob */
 .slider{-webkit-appearance:none;appearance:none;width:100%;height:36px;margin:10px 0 8px;background:transparent;--p:36%}
-.slider::-webkit-slider-runnable-track{height:8px;border-radius:4px;box-shadow:inset 0 1px 2px rgba(0,0,0,.6);
-  background:linear-gradient(90deg,var(--live) 0 var(--p),rgba(0,0,0,.42) var(--p) 100%)}
-.slider::-webkit-slider-thumb{-webkit-appearance:none;width:30px;height:30px;margin-top:-11px;border-radius:50%;
-  background:radial-gradient(circle at 35% 30%,#fff,rgba(235,245,240,.88) 45%,rgba(196,212,204,.82));
-  box-shadow:0 4px 12px rgba(0,0,0,.5),inset 0 -2px 3px rgba(0,0,0,.18),0 0 0 .5px rgba(255,255,255,.6)}
+.slider::-webkit-slider-runnable-track{height:6px;border-radius:3px;box-shadow:inset 0 1px 2px rgba(0,0,0,.6);
+  background:linear-gradient(90deg,var(--live) 0 var(--p),rgba(255,255,255,.1) var(--p) 100%)}
+/* the knob: plain white, as iOS draws it, with a soft shadow */
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:-10px;border-radius:50%;background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.4),0 0 0 .5px rgba(0,0,0,.08)}
+.slider:active::-webkit-slider-thumb{transform:scale(1.08)}
 /* toggle: an iOS switch */
 .switch{-webkit-appearance:none;appearance:none;flex:none;position:relative;width:52px;height:32px;margin:0;border-radius:16px;cursor:pointer;
   background:rgba(0,0,0,.42);box-shadow:inset 0 1px 3px rgba(0,0,0,.6),inset 0 0 0 .5px rgba(255,255,255,.1);transition:background .2s}

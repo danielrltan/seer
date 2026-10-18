@@ -5,6 +5,8 @@
 import fs from 'node:fs';
 import { GLASS_CSS, MARK, BACKDROP, GEAR, BACK, BTN } from './glass.js';
 
+const PHOSPHOR = Object.fromEntries(fs.readdirSync(new URL('../assets/icons/phosphor/', import.meta.url)).filter(f => f.endsWith('.svg'))
+  .map(f => [f.slice(0, -4), fs.readFileSync(new URL('../assets/icons/phosphor/' + f, import.meta.url), 'utf8').replace(/<\/?svg[^>]*>/g, '')]));
 const CLAUDE_D = fs.readFileSync(new URL('../assets/agents/claude.svg', import.meta.url), 'utf8').match(/<path d="([^"]+)"/)[1];
 
 export function homePage(initial, appHead) {
@@ -49,7 +51,7 @@ ${appHead}
 .hero .srow .why{margin-top:2px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the Mac's state as the eye: open, its pupil turning while an agent works, shut while the Mac sleeps */
 .hero .eye.big{flex:none;width:66px;height:48px}
-.hero #sleep-b{flex:none;align-self:center}
+.hero #sleep-b{flex:none;margin-left:auto}
 #sleep-b.armed{background:rgba(255,90,95,.2);color:#ffd9da;box-shadow:inset 0 1px 0 rgba(255,200,200,.25),0 0 0 .5px rgba(255,90,95,.6)}
 .count .t{font:700 20px/1 var(--round);font-variant-numeric:tabular-nums;min-width:70px}
 /* stats, by weight: battery first and widest, with the biggest number; then ping, network and lid as three
@@ -57,9 +59,12 @@ ${appHead}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
 .tile{padding:13px 13px 12px;border-radius:22px;min-height:108px;display:flex;flex-direction:column;min-width:0}
 .tile .v{font:700 21px/1.1 var(--round);letter-spacing:-.02em;margin-top:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.tile .th .ti{width:24px;height:16px}
+.ti{flex:none;display:grid;color:var(--ink2);transition:color .3s,opacity .3s}
+.ti svg{width:22px;height:22px}
+.tile.wide .ti svg{width:26px;height:26px}
+.ti.green{color:var(--live);filter:drop-shadow(0 0 4px var(--glow))}.ti.amber{color:var(--amber)}.ti.red{color:var(--red)}
+.ti.on{color:#fff}.ti.dim{opacity:.4}
 .tile.wide{padding:15px 18px 17px;border-radius:24px}
-.tile.wide .th .ti{width:30px;height:20px}
 .tile.wide .brow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:auto}
 .tile.wide .v{font-size:46px;margin-top:0;letter-spacing:-.035em}
 .tile.wide .s{margin:0;padding:0}
@@ -75,14 +80,6 @@ svg.scope{width:100%;height:28px;margin-top:10px;overflow:visible}
 svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;filter:drop-shadow(0 0 4px var(--glow))}
 /* each tile: its label, and on the right a live icon of the same thing (battery level, signal, lid) */
 .th{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.ti{flex:none;width:30px;height:20px;fill:none;stroke:var(--ink2);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;overflow:visible;transition:stroke .3s,color .3s}
-#batt-ic .fill{fill:currentColor;stroke:none;color:#fff;transition:width .4s}
-#batt-ic.green .fill{color:var(--live)}#batt-ic.red .fill{color:var(--red)}#batt-ic.red{stroke:var(--red)}
-#batt-ic .bolt{fill:#fff;stroke:#0b100e;stroke-width:1.3;display:none}#batt-ic.charging .bolt{display:block}
-#ping-ic.green{stroke:var(--live);filter:drop-shadow(0 0 4px var(--glow))}#ping-ic.amber{stroke:var(--amber)}#ping-ic.red{stroke:var(--red)}
-.wifi path{stroke:rgba(255,255,255,.2)}.wifi path.on{stroke:#fff}.wifi circle{fill:#fff;stroke:none}
-.wifi .x{display:none;stroke:var(--red)}.wifi.off .x{display:block}.wifi.off circle{fill:rgba(255,255,255,.2)}
-.lap{stroke:#fff}
 .stay{padding:16px 18px 16px;border-radius:26px;margin-bottom:12px}
 .stay .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .stay .row:first-child{align-items:baseline}
@@ -111,6 +108,7 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
   background:linear-gradient(160deg,rgba(255,255,255,.13),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 .5px rgba(255,255,255,.06),0 4px 12px rgba(0,0,0,.3)}
 .mon.live .ic{color:#eafff3;background:linear-gradient(160deg,rgba(43,240,138,.3),rgba(43,240,138,.08));box-shadow:inset 0 1px 0 rgba(200,255,225,.3),0 0 0 .5px rgba(43,240,138,.35),0 4px 14px rgba(43,240,138,.12)}
 .mon .ic svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.mon .ic svg.phi,.hero .dev-ic svg.phi{fill:currentColor;stroke:none;width:26px;height:26px}
 .mon .ic .pip{position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border:2.5px solid #0a0f0d}
 .mon .nm{font-size:17.5px;font-weight:650}
 .mon .meta{margin-top:3px}
@@ -136,7 +134,8 @@ main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
 #p-home>*{flex:none;margin:0}
 #p-home .hero{flex:1 0 auto;display:flex;flex-direction:column}
 #p-home .hero .srow{margin:auto 0}
-#p-home .hero .count{margin-top:14px}
+.hero .hfoot{display:flex;align-items:center;gap:12px;margin-top:14px}
+.hero .hfoot .count{flex:1;min-width:0;margin:0}
 #help:empty{display:none}
 #help .help:last-child{margin-bottom:0}
 /* the tab bar: a floating glass capsule; a lit glass pill slides under the tab that is open */
@@ -189,17 +188,17 @@ ${BACKDROP}
 <div class="pane on" id="p-home">
 <section class="glass hero">
   <div class="top"><span class="k dev" id="dev">mac</span><span class="tr"><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span><i class="dev-ic" id="dev-ic"></i></span></div>
-  <div class="srow">${MARK.replace('class="eye"', 'class="eye big" id="eye"')}<div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep</span></button></div>
-  <div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div>
+  <div class="srow">${MARK.replace('class="eye"', 'class="eye big" id="eye"')}<div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div></div>
+  <div class="hfoot"><div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep</span></button></div>
 </section>
 
 <div id="help"></div>
 
-<div class="glass tile wide"><div class="th"><span class="k">battery</span><svg class="ti" id="batt-ic" viewBox="0 0 30 20" aria-hidden="true"><rect x="1.5" y="3.5" width="23.5" height="13" rx="4"/><path d="M28 8.2v3.6"/><rect class="fill" id="batt-f" x="4" y="6" width="0" height="8" rx="2"/><path class="bolt" id="batt-bolt" d="M14.6 4.2 9.6 11h4.2l-1.6 4.8 5.2-7h-4.3Z"/></svg></div><svg class="bchart" id="bchart" viewBox="0 0 360 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="bfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2bf08a" stop-opacity=".16"/><stop offset="1" stop-color="#2bf08a" stop-opacity="0"/></linearGradient></defs><path id="bchart-a" fill="url(#bfill)"/><path id="bchart-l"/></svg><div class="brow"><div class="v" id="batt">—</div><div class="s" id="batt-s"></div></div><div class="track"><i id="batt-i"></i></div></div>
+<div class="glass tile wide"><div class="th"><span class="k">battery</span><i class="ti" id="batt-ic"></i></div><svg class="bchart" id="bchart" viewBox="0 0 360 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="bfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2bf08a" stop-opacity=".16"/><stop offset="1" stop-color="#2bf08a" stop-opacity="0"/></linearGradient></defs><path id="bchart-a" fill="url(#bfill)"/><path id="bchart-l"/></svg><div class="brow"><div class="v" id="batt">—</div><div class="s" id="batt-s"></div></div><div class="track"><i id="batt-i"></i></div></div>
 <div class="grid">
-  <div class="glass tile"><div class="th"><span class="k">ping</span><svg class="ti" id="ping-ic" viewBox="0 0 30 20" aria-hidden="true"><path d="M1.5 10.5h5.5l3-7 4.6 13.5 3.6-10 2.1 3.5h8.2"/></svg></div><div class="v" id="ping">—</div><svg class="scope" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline id="scope" points=""/></svg></div>
-  <div class="glass tile"><div class="th"><span class="k">network</span><svg class="ti wifi" viewBox="0 0 30 20" aria-hidden="true"><path id="r3" d="M2.5 7.6a17.6 17.6 0 0 1 25 0"/><path id="r2" d="M7 12.1a11.2 11.2 0 0 1 16 0"/><path id="r1" d="M11.4 16.3a5.1 5.1 0 0 1 7.2 0"/><circle cx="15" cy="18.4" r="1.6"/><path class="x" id="wifi-x" d="M4.5 1.5l21 17"/></svg></div><div class="v" id="net">—</div><div class="s" id="net-s"></div></div>
-  <div class="glass tile"><div class="th"><span class="k">lid</span><svg class="ti lap" viewBox="0 0 30 20" aria-hidden="true"><path id="lap-screen" d="M5.5 2.5h19a1.5 1.5 0 0 1 1.5 1.5v10.5H4V4a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M1.5 16.8h27"/></svg></div><div class="v" id="lid">—</div><div class="s" id="lid-s"></div></div>
+  <div class="glass tile"><div class="th"><span class="k">ping</span><i class="ti" id="ping-ic"></i></div><div class="v" id="ping">—</div><svg class="scope" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline id="scope" points=""/></svg></div>
+  <div class="glass tile"><div class="th"><span class="k">network</span><i class="ti" id="net-ic"></i></div><div class="v" id="net">—</div><div class="s" id="net-s"></div></div>
+  <div class="glass tile"><div class="th"><span class="k">lid</span><i class="ti" id="lid-ic"></i></div><div class="v" id="lid">—</div><div class="s" id="lid-s"></div></div>
 </div>
 
 <section class="glass stay">
@@ -246,6 +245,14 @@ function tick() {                                       // the clock and the cou
   }
 }
 
+// Icons from Phosphor (MIT, assets/icons/phosphor), drawn in the tiles' slots: icon(slot, name, colour class).
+const PH = ${JSON.stringify(PHOSPHOR)};
+const ph = n => '<svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">' + (PH[n] || '') + '</svg>';
+function icon(id, name, cls) { const e = $(id); if (e.dataset.n !== name) { e.innerHTML = ph(name); e.dataset.n = name; } e.className = 'ti' + (cls ? ' ' + cls : ''); }
+// bytes a second, short: 0 B, 840 B, 12 K, 1.4 M (per second; the arrows say which way)
+const rate = b => b < 1000 ? b + 'B' : b < 1e6 ? Math.round(b / 1000) + 'K' : (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + 'M';
+const devKind = () => { const d = st.device || {}; return d.kind === 'desktop' || (!d.kind && st.lid === 'unknown') ? 'desktop' : 'laptop'; };
+
 // Each agent's mark, by the kind agents.js reports: the agent's own logo (assets/agents, from Simple Icons, which
 // takes each from the brand's source); one it does not know gets a plain spark.
 const AGENT = {
@@ -255,8 +262,8 @@ const AGENT = {
 
 // What each monitor is: this Mac (a laptop or a desktop, from its model), a web project on it, a cloud copy.
 const ICON = {
-  laptop: '<svg viewBox="0 0 24 24"><rect x="4.5" y="5" width="15" height="10.5" rx="1.8"/><path d="M2.5 18.5h19"/></svg>',
-  desktop: '<svg viewBox="0 0 24 24"><rect x="3" y="3.8" width="18" height="12.6" rx="2.2"/><path d="M12 16.4v3.6M8.2 20h7.6"/></svg>',
+  laptop: ph('laptop').replace('<svg', '<svg class="phi"'),
+  desktop: ph('desktop').replace('<svg', '<svg class="phi"'),
   web: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 9.5 7 12l2.5 2.5M14.5 9.5 17 12l-2.5 2.5"/></svg>',
   window: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 8.8h18"/><circle cx="6.1" cy="6.4" r=".75" fill="currentColor" stroke="none"/><circle cx="8.6" cy="6.4" r=".75" fill="currentColor" stroke="none"/></svg>',
 };
@@ -283,21 +290,21 @@ function render() {
   close();
   $('bchart-l').setAttribute('d', line); $('bchart-a').setAttribute('d', area);
   $('bchart').setAttribute('class', 'bchart' + (low ? ' red' : ''));
-  $('batt-f').setAttribute('width', (Math.max(0, Math.min(100, b.pct)) / 100 * 18.5).toFixed(1));
-  $('batt-ic').setAttribute('class', 'ti' + (low ? ' red' : b.pluggedIn ? ' green' : '') + (b.state === 'charging' ? ' charging' : ''));
+  icon('batt-ic', b.state === 'charging' ? 'battery-charging' : low ? 'battery-warning' : b.pct >= 90 ? 'battery-full' : b.pct >= 65 ? 'battery-high' : b.pct >= 35 ? 'battery-medium' : b.pct >= 10 ? 'battery-low' : 'battery-empty',
+    low ? 'red' : b.pluggedIn ? 'green' : 'on');
   $('batt-s').textContent = b.pluggedIn ? (b.state === 'charging' ? 'charging' : 'plugged in') : (b.remaining ? b.remaining + ' left' : 'on battery') + (b.drainPerHour != null ? ' · ' + b.drainPerHour + '%/h' : '');
   // network
   const lit = { strong: 3, good: 2, weak: 1, poor: 0 }[n.signal] ?? (n.kind === 'hotspot' || n.kind === 'wired' ? 3 : 0);
-  ['r1', 'r2', 'r3'].forEach((r, i) => $(r).classList.toggle('on', n.kind !== 'offline' && i < lit));
-  document.querySelector('.wifi').classList.toggle('off', n.kind === 'offline');
+  icon('net-ic', n.kind === 'offline' ? 'wifi-slash' : ['wifi-none', 'wifi-low', 'wifi-medium', 'wifi-high'][lit], n.kind === 'offline' ? 'red' : 'on');
   $('net').textContent = { wifi: 'Wi-Fi', hotspot: 'Hotspot', wired: 'Wired', offline: 'Offline' }[n.kind] || n.kind;
   $('net').className = 'v ' + (n.kind === 'offline' ? 'red' : n.kind === 'hotspot' ? 'amber' : '');
   $('net-s').textContent = n.kind === 'offline'
     ? (h.joining ? 'joining ' + (h.name || 'hotspot') : 'no internet')
+    : n.rates ? '↓' + rate(n.rates.down) + ' ↑' + rate(n.rates.up)
     : [n.kind === 'hotspot' ? h.name : n.ssid, n.internetMs != null ? n.internetMs + ' ms' : ''].filter(Boolean).join(' · ');
   // lid
   $('lid').textContent = st.lid === 'unknown' ? '—' : st.lid === 'closed' ? 'Closed' : 'Open';
-  $('lap-screen').setAttribute('d', st.lid === 'closed' ? 'M3.5 14.2h23' : 'M5.5 2.5h19a1.5 1.5 0 0 1 1.5 1.5v10.5H4V4a1.5 1.5 0 0 1 1.5-1.5Z');
+  icon('lid-ic', devKind() === 'desktop' ? 'desktop' : 'laptop', st.lid === 'closed' ? 'dim' : 'on');
   $('lid-s').textContent = st.lid === 'closed' && (a.external || a.inUse) ? 'external display' : '';
   // stay awake
   $('stay-x').hidden = !a.stayUntil;
@@ -318,14 +325,14 @@ function render() {
   // projects
   const dev = st.device || {};
   $('dev').textContent = dev.name || 'mac';
-  const devIcon = dev.kind === 'desktop' || (!dev.kind && st.lid === 'unknown') ? ICON.desktop : ICON.laptop;
+  const devIcon = ICON[devKind()];
   if ($('dev-ic').innerHTML !== devIcon) $('dev-ic').innerHTML = devIcon;
   const rows = (st.desktop ? [{ name: dev.name || 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
     const live = p.state === 'running' || p.state === 'on demand' || p.state === 'streamed';
-    const icon = p.where === 'screen' ? (dev.kind === 'desktop' || (!dev.kind && st.lid === 'unknown') ? ICON.desktop : ICON.laptop) : p.where === 'cloud' ? ICON.window : ICON.web;
+    const mark = p.where === 'screen' ? ICON[devKind()] : p.where === 'cloud' ? ICON.window : ICON.web;
     const meta = p.where === 'screen' ? [dev.model, 'screen'].filter(Boolean).join(' · ') : [p.where === 'cloud' ? 'cloud' : 'mac', p.state === 'running' ? '' : p.state].filter(Boolean).join(' · ');
-    return '<a class="proj mon' + (live ? ' live' : '') + '" href="' + esc(p.href) + '"><span class="ic">' + icon + '<i class="pip ' + (live ? 'on' : p.state === 'failed' ? 'red' : '') + '"></i></span>'
+    return '<a class="proj mon' + (live ? ' live' : '') + '" href="' + esc(p.href) + '"><span class="ic">' + mark + '<i class="pip ' + (live ? 'on' : p.state === 'failed' ? 'red' : '') + '"></i></span>'
       + '<div class="main"><div class="nm">' + esc(p.name) + '</div><div class="meta">' + esc(meta) + '</div></div>'
       + '<span class="go"></span></a>';
   }).join('') : '<p class="empty">nothing running</p>';
@@ -343,7 +350,7 @@ async function refresh() {
     await fetch('/ping', { cache: 'no-store' });
     const ms = Math.round(performance.now() - t0);
     const q = ms < 120 ? 'green' : ms < 300 ? 'amber' : 'red';
-    $('ping').innerHTML = ms + '<small> ms</small>'; $('ping').className = 'v ' + q; $('ping-ic').setAttribute('class', 'ti ' + q);
+    $('ping').innerHTML = ms + '<small> ms</small>'; $('ping').className = 'v ' + q; icon('ping-ic', 'pulse', q);
     $('link').textContent = 'linked'; $('link-pip').className = 'pip on';
     scope(ms);
     const next = await (await fetch('/status.json', { cache: 'no-store' })).json();
@@ -353,7 +360,7 @@ async function refresh() {
     if (sleptAt) { sleptAt = 0; const b = $('sleep-b'); b.disabled = false; b.lastChild.textContent = 'Sleep'; }
     st = next;
     render();
-  } catch { $('link').textContent = 'lost'; $('link-pip').className = 'pip red'; $('ping').textContent = '—'; $('ping-ic').setAttribute('class', 'ti'); }
+  } catch { $('link').textContent = 'lost'; $('link-pip').className = 'pip red'; $('ping').textContent = '—'; icon('ping-ic', 'pulse', ''); }
 }
 
 // stay awake: 10 min to 12 h, finer at the short end
@@ -442,6 +449,7 @@ $('tabs').addEventListener('click', e => {
 });
 show(location.hash.slice(1));
 
+icon('ping-ic', 'pulse', '');
 render(); refresh();
 setInterval(tick, 1000);
 // Every 5 s while the Mac is up; every 30 s while it sleeps or does not answer, so an open page never keeps

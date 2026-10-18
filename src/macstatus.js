@@ -101,6 +101,26 @@ export function sampleBattery(b, state) {
     }
   } catch {}
 }
+// Send and receive: bytes per second through the interface the default route uses, from the counters netstat
+// reports, as the change since the last look (at least 2 s apart). null until there are two looks.
+let traffic = null, rates = null;
+async function throughput() {
+  const iface = ((await run('/sbin/route', ['-n', 'get', 'default'])).match(/interface:\s*(\S+)/) || [])[1];
+  if (!iface) { traffic = rates = null; return null; }
+  const now = Date.now();
+  if (traffic && traffic.iface === iface && now - traffic.at < 2000) return rates;
+  const row = (await run('/usr/sbin/netstat', ['-ibn', '-I', iface])).split('\n').find(l => l.includes('<Link#'));
+  const f = row ? row.trim().split(/\s+/) : [];
+  const inB = Number(f[6]), outB = Number(f[9]);
+  if (!Number.isFinite(inB) || !Number.isFinite(outB)) return rates;
+  if (traffic && traffic.iface === iface && inB >= traffic.inB && outB >= traffic.outB) {
+    const dt = (now - traffic.at) / 1000;
+    rates = { down: Math.round((inB - traffic.inB) / dt), up: Math.round((outB - traffic.outB) / dt) };
+  } else rates = null;
+  traffic = { iface, at: now, inB, outB };
+  return rates;
+}
+
 // The charge over the last 6 hours for the battery card's chart: [minutes ago, %], one point per 6 minutes at
 // most. A stretch the Mac slept through has no samples, and the chart leaves it a gap. Cached a minute.
 let hist = { at: 0, value: [] };
@@ -138,5 +158,5 @@ export async function macStatus({ awake, agentsBusy, lid: lidState, notes = [] }
   const [batt, netw] = await Promise.all([batteryDetail(), network()]);
   const cfg = loadConfig();
   const hotspot = { name: cfg.hotspotSsid || null, offlineFor: netState.downSince ? Math.round((Date.now() - netState.downSince) / 1000) : 0, joining: netState.joining, lastJoin: netState.lastJoin };
-  return { at: Date.now(), battery: { ...batt, drainPerHour: batt.pluggedIn ? null : drainRate(awake.mode), history: batteryHistory() }, lid: lidState || await lid(), network: netw, awake, agentsBusy, hotspot, help: notes };
+  return { at: Date.now(), battery: { ...batt, drainPerHour: batt.pluggedIn ? null : drainRate(awake.mode), history: batteryHistory() }, lid: lidState || await lid(), network: { ...netw, rates: await throughput() }, awake, agentsBusy, hotspot, help: notes };
 }
