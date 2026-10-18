@@ -53,7 +53,7 @@ export function decide(i) {
   const running = wants && !holdingOff && !floor && !(closed && !canClose);
   const headless = running && closed && !i.watching && !i.inUse && !busy;
 
-  const label = running ? (headless ? 'Headless' : 'Awake') : i.inUse ? 'In use' : closed ? 'Sleeping' : 'Idle';
+  const label = running ? (headless ? 'Idle' : 'Awake') : i.inUse ? 'In use' : closed ? 'Asleep' : 'Idle';
   const sub = running ? reason : wants && floor && !holdingOff ? `battery ${b.pct}%` : '';
 
   // The one countdown the page shows, so it can never disagree with when the Mac lets go.

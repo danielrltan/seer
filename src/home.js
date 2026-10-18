@@ -239,10 +239,10 @@ const ICON = {
 function render() {
   const a = st.awake, b = st.battery, n = st.network, h = st.hotspot;
   $('pupil').classList.toggle('spin', !!st.agentsBusy);           // the eye's pupil turns while an agent works
-  $('eye').classList.toggle('asleep', a.label === 'Sleeping');    // and shuts while the Mac sleeps
-  if (!sleptAt) $('sleep-b').hidden = a.label === 'Sleeping';     // already asleep: nothing to send
+  $('eye').classList.toggle('asleep', a.label === 'Asleep');    // and shuts while the Mac sleeps
+  if (!sleptAt) $('sleep-b').hidden = a.label === 'Asleep';     // already asleep: nothing to send
   $('state').textContent = a.label || (a.awake ? 'Awake' : 'Idle');
-  $('state').className = 'state' + (a.awake ? ' live' : a.inUse ? ' use' : '');
+  $('state').className = 'state' + (a.label === 'Awake' ? ' live' : a.inUse ? ' use' : '');
   $('why').textContent = a.why; $('why').hidden = !a.why;
   // battery
   const low = !b.pluggedIn && b.pct <= 20;
@@ -418,7 +418,7 @@ setInterval(tick, 1000);
 // Every 5 s while the Mac is up; every 30 s while it sleeps or does not answer, so an open page never keeps
 // knocking on a sleeping Mac (a reply can only come from one of its brief background wakes). Never while hidden.
 (function poll() {
-  const asleep = sleptAt || $('link').textContent === 'lost' || (st.awake && st.awake.label === 'Sleeping');
+  const asleep = sleptAt || $('link').textContent === 'lost' || (st.awake && st.awake.label === 'Asleep');
   setTimeout(() => { if (!document.hidden) refresh().finally(poll); else poll(); }, asleep ? 30000 : 5000);
 })();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
