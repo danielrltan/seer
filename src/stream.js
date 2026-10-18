@@ -130,6 +130,16 @@ export async function authorizeViewer(req, socket, log, what) {
   return who || deny('no valid Access token');
 }
 
+// Scrolling: the viewer sends how far the finger moved (swipe up: dy < 0, the page should move up, as on iOS).
+// SeerStream turns it into scroll-wheel events, which macOS reverses when "natural scrolling" is on (the
+// default), so the sign follows that setting, read again every minute in case it is changed.
+let natural = true;
+function readNatural() {
+  execFile('/usr/bin/defaults', ['read', '-g', 'com.apple.swipescrolldirection'], (err, out) => { natural = err ? true : String(out).trim() !== '0'; });
+}
+readNatural(); setInterval(readNatural, 60_000).unref();
+const wheel = input => (input.t === 'scroll' && natural ? { ...input, dx: -input.dx, dy: -input.dy } : input);
+
 export function initStream(log) {
   connectHelper(log);
   restoreDock();                                                                  // a crash left it shown
@@ -152,7 +162,7 @@ export async function streamUpgrade(req, socket, head, log) {
         if (m.t === 'keyframe') return requestKey();
         if (m.t === 'dock') return toggleDock();
         const input = cleanInput(m);
-        if (input) toHelper(input);
+        if (input) toHelper(wheel(input));
       });
       ws.on('close', () => {
         viewers.delete(ws);
