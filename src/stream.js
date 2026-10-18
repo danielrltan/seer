@@ -153,6 +153,8 @@ export async function streamUpgrade(req, socket, head, log) {
     wss.handleUpgrade(req, socket, head, ws => {
       log(`desktop viewer connected (${req.who}); ${viewers.size + 1} watching`);
       viewers.add(ws);
+      // Wake the display (a sleeping screen streams black): a short user-activity assertion, like a key press.
+      execFile('/usr/bin/caffeinate', ['-u', '-t', '10'], () => {});
       ws.needKey = true;
       if (!helper) ws.send(JSON.stringify({ error: 'Seer Stream is not running on the Mac' }));
       if (viewers.size === 1) startCapture(); else { if (lastConfig) ws.send(lastConfig); requestKey(); }

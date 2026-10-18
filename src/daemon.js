@@ -8,7 +8,8 @@ import { list } from './core.js';
 import { tail } from './devserver.js';
 import { cleanName, loadConfig } from './store.js';
 import { HOME_PORT } from './services.js';
-import { reconcile, release, failover } from './awake.js';
+import { reconcile, release, failover, battery } from './awake.js';
+import { awakeReason, seen } from './activity.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
 import { WebSocketServer } from 'ws';
@@ -85,6 +86,7 @@ function logPage(name) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
+    if (req.headers['cf-access-jwt-assertion']) seen();          // someone opened a Seer page: they may come back soon
     if (url.pathname === '/s/check-result' && req.method === 'POST') {          // what the phone reported, for Seer's log
       let body = ''; for await (const c of req) { body += c; if (body.length > 4000) break; }
       log('stream check from a browser:\n' + body.slice(0, 4000));
@@ -165,18 +167,21 @@ server.on('upgrade', async (req, socket, head) => {
   });
 });
 
-// Hold the Mac awake while anything is running; let it sleep when nothing is. caffeinate covers an open lid;
-// away mode (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
-let awake = null, running = false, windowSince = 0;
+// Hold the Mac awake while something needs it (activity.js: plugged in, an agent working, someone watching, or
+// the reachable window after those) and let it sleep otherwise. caffeinate covers an open lid; away mode
+// (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
+let awake = null, running = false, windowSince = 0, why = { awake: false, why: 'starting' };
 const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
 const checkNetwork = failover(log);
 async function tick() {
-  running = (await list().catch(() => [])).some(p => p.state === 'running');
+  const b = await battery().catch(() => ({ onBattery: false, pct: 100 }));
+  why = awakeReason({ pluggedIn: !b.onBattery, watching: viewerCount() > 0 || windowOpen() });
+  running = why.awake;
   if (running && !awake) {
     awake = spawn('/usr/bin/caffeinate', ['-is'], { stdio: 'ignore' });
     awake.on('exit', () => { awake = null; });
   } else if (!running && awake) { awake.kill(); awake = null; }
-  const next = loadConfig().away ? await reconcile(running).catch(e => ({ mode: 'error', why: e.message }))
+  const next = loadConfig().away ? await reconcile(running).then(r => ({ ...r, why: running ? why.why : r.why })).catch(e => ({ mode: 'error', why: e.message }))
     : { mode: 'sleeps normally', why: 'away mode off (seer away on)' };
   if (next.mode !== away.mode || next.why !== away.why) log(`away mode: ${next.mode} (${next.why})`);
   away = next;

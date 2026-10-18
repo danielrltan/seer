@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import * as core from '../src/core.js';
 import * as away from '../src/awake.js';
 import * as cloud from '../src/cloud.js';
+import { recordHook } from '../src/activity.js';
 import { uninstallAgents, installAgents } from '../src/services.js';
 import { HOME, loadConfig, saveConfig, loadPreviews } from '../src/store.js';
 
@@ -29,6 +30,8 @@ const HELP = `seer: run a build and get a private link to open it on your phone
   seer away install       let Seer keep the Mac awake with the lid closed (asks for sudo once)
   seer away hotspot "SSID"  fail over to this phone hotspot when the Wi-Fi goes (password on stdin)
   seer away status        what away mode is doing now
+  seer away hooks         tell Seer when Claude Code agents are working (adds two hooks)
+  seer away reachable N   stay reachable N minutes after the last activity (default 30)
   seer away join          join the hotspot now, to test it (switches Wi-Fi)
   seer uninstall          stop the background services and let the Mac sleep normally
 `;
@@ -50,6 +53,26 @@ async function readHidden(prompt) {            // a typed password without echo,
   execFileSync('/bin/stty', ['-echo'], { stdio: 'inherit' });
   try { return (await new Promise(r => process.stdin.once('data', d => r(String(d))))).trim(); }
   finally { execFileSync('/bin/stty', ['echo'], { stdio: 'inherit' }); process.stdout.write('\n'); process.stdin.pause(); }
+}
+
+// Claude Code hooks that tell Seer when an agent is working: busy on each prompt, idle when it stops. Added to
+// ~/.claude/settings.json (backed up first) beside the hooks already there; run again, it changes nothing.
+function installHooks() {
+  const file = path.join(os.homedir(), '.claude', 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const cmd = state => `${process.execPath} ${new URL('./seer-hook.js', import.meta.url).pathname} ${state}`;
+  settings.hooks ||= {};
+  let added = 0;
+  for (const [event, state] of [['UserPromptSubmit', 'busy'], ['Stop', 'idle']]) {
+    const list = settings.hooks[event] ||= [];
+    if (JSON.stringify(list).includes('seer-hook.js ' + state)) continue;
+    list.push({ hooks: [{ type: 'command', command: cmd(state), timeout: 5 }] });
+    added++;
+  }
+  if (!added) return 'Claude Code hooks already in place';
+  fs.copyFileSync(file, `${file}.bak-before-seer-hooks`);
+  fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+  return `added ${added} Claude Code hook${added > 1 ? 's' : ''} (backup: ${file}.bak-before-seer-hooks)`;
 }
 
 async function awayCmd(sub, value) {
@@ -74,6 +97,8 @@ async function awayCmd(sub, value) {
     return console.log(`hotspot set: ${value} (password in the login keychain). Test it with: seer away join`);
   }
   if (sub === 'on' || sub === 'off') { saveConfig({ away: sub === 'on' }); if (sub === 'off') await away.release(); return console.log(`away mode ${sub}`); }
+  if (sub === 'hooks') return console.log(installHooks());
+  if (sub === 'reachable') { const m = Number(value); if (!(m >= 0 && m <= 24 * 60)) throw new Error('seer away reachable <minutes>'); saveConfig({ reachableMin: m }); return console.log(`reachable for ${m} min after the last activity`); }
   if (sub === 'join') return console.log(`hotspot join: ${await away.joinHotspot()}`);
   if (sub === 'status' || !sub) {
     const rule = await away.ruleInstalled(), b = await away.battery();
@@ -121,6 +146,11 @@ try {
       saveConfig({ desktop: arg === 'on' });
       await installAgents();
       console.log(`remote desktop ${arg}${arg === 'on' ? ' (needs ~/.seer/SeerStream.app: scripts/build-stream.sh)' : ''}`);
+      break;
+    }
+    case 'hook': {                          // from Claude Code's hooks: never slow, never failing
+      let input = ''; if (!process.stdin.isTTY) for await (const c of process.stdin) input += c;
+      recordHook(arg === 'busy' ? 'busy' : 'idle', input);
       break;
     }
     case 'away': await awayCmd(arg, positionals[2]); break;
