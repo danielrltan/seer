@@ -20,9 +20,13 @@ ${appHead}
 .state.use{color:#fff}
 .why{font-size:15px;color:var(--ink2)}
 .count{display:flex;align-items:center;gap:12px;margin-top:16px}
-.hero .foot{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
-.hero .sw{min-width:0}
-.hero #sleep-b{flex:none;margin-bottom:2px}
+.hero .srow{display:flex;align-items:center;gap:14px;margin:14px 0 6px}
+.hero .srow .state{margin:0;white-space:nowrap}
+.hero .foot{display:flex;align-items:center;gap:12px;min-height:40px}
+.hero .foot .why{min-width:0}
+/* the Mac's state as the eye: open, its pupil turning while an agent works, shut while the Mac sleeps */
+.hero .eye.big{flex:none;width:60px;height:44px}
+.hero #sleep-b{flex:none;margin-left:auto}
 #sleep-b.armed{background:rgba(255,90,95,.2);color:#ffd9da;box-shadow:inset 0 1px 0 rgba(255,200,200,.25),0 0 0 .5px rgba(255,90,95,.6)}
 .count .t{font:700 20px/1 var(--round);font-variant-numeric:tabular-nums;min-width:70px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
@@ -137,7 +141,7 @@ body.pushed .push .wait svg{opacity:1}
 ${BACKDROP}
 <main>
 <header class="glass bar">
-  ${MARK.replace('class="eye"', 'class="eye" id="eye"')}
+  ${MARK.replace(' id="pupil"', '')}
   <span class="word">seer</span>
   <span class="clock" id="clock"></span>
   <a class="icon-btn" href="/settings" aria-label="Settings">${GEAR}</a>
@@ -146,7 +150,8 @@ ${BACKDROP}
 <div class="pane on" id="p-home">
 <section class="glass hero">
   <div class="top"><span class="k" id="dev">mac</span><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span></div>
-  <div class="foot"><div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep now</span></button></div>
+  <div class="srow">${MARK.replace('class="eye"', 'class="eye big" id="eye"')}<div class="state" id="state">—</div></div>
+  <div class="foot"><div class="why" id="why"></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep now</span></button></div>
   <div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div>
 </section>
 
@@ -220,8 +225,9 @@ const ICON = {
 
 function render() {
   const a = st.awake, b = st.battery, n = st.network, h = st.hotspot;
-  $('pupil').classList.toggle('spin', !!st.agentsBusy);           // the logo's pupil turns while an agent works
+  $('pupil').classList.toggle('spin', !!st.agentsBusy);           // the eye's pupil turns while an agent works
   $('eye').classList.toggle('asleep', a.label === 'Sleeping');    // and shuts while the Mac sleeps
+  if (!sleptAt) $('sleep-b').hidden = a.label === 'Sleeping';     // already asleep: nothing to send
   $('state').textContent = a.label || (a.awake ? 'Awake' : 'Idle');
   $('state').className = 'state' + (a.awake ? ' live' : a.inUse ? ' use' : '');
   $('why').textContent = a.why; $('why').hidden = !a.why;
