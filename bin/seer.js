@@ -79,7 +79,7 @@ async function awayCmd(sub, value) {
   }
   if (sub === 'on' || sub === 'off') { saveConfig({ away: sub === 'on' }); if (sub === 'off') await away.release(); return console.log(`away mode ${sub}`); }
   if (sub === 'hooks') return console.log(installHooks());
-  if (sub === 'reachable') { const m = Number(value); if (!(m >= 0 && m <= 24 * 60)) throw new Error('seer away reachable <minutes>'); saveConfig({ reachableMin: m }); return console.log(`reachable for ${m} min after the last activity`); }
+  if (sub === 'reachable') { const m = Number(value); if (!(m >= 0 && m <= 24 * 60)) throw new Error('seer away reachable <minutes>'); saveConfig({ reachableMin: m }); return console.log(`kept awake ${m} min after the last activity`); }
   if (sub === 'join') return console.log(`hotspot join: ${await away.joinHotspot()}`);
   if (sub === 'status' || !sub) {
     const rule = await away.ruleInstalled(), b = await away.battery();

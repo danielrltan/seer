@@ -45,7 +45,7 @@ ${BACKDROP}
 <div class="glass group">
   <label class="row"><span class="l">Stay up with the lid closed<span class="d" id="away-d"></span></span><input type="checkbox" class="switch" data-k="away"></label>
   <label class="row"><span class="l">Working agents keep it awake<span class="d" id="agentsKeepAwake-d"></span></span><input type="checkbox" class="switch" data-k="agentsKeepAwake"></label>
-  <div class="row col"><div class="top"><span class="l">Reachable after the last activity<span class="d" id="reachableMin-d"></span></span><span class="val" id="reachableMin-v"></span></div>
+  <div class="row col"><div class="top"><span class="l">Stay awake after the last activity<span class="d" id="reachableMin-d"></span></span><span class="val" id="reachableMin-v"></span></div>
     <input type="range" class="slider" data-k="reachableMin" min="0" max="120" step="5" data-unit="min"></div>
 </div>
 

@@ -90,7 +90,7 @@ function tick() {                                       // the clock and the cou
   const until = a.stayUntil || (a.awake && !st.agentsBusy && a.reachableUntil > now ? a.reachableUntil : 0);
   $('count').hidden = !until;
   if (until) {
-    $('count-k').textContent = a.stayUntil ? 'awake' : 'to sleep';
+    $('count-k').textContent = a.stayUntil ? 'awake' : st.lid === 'closed' ? 'then sleeps' : 'then normal sleep';
     $('count-t').textContent = mmss(until - now);
     const span = a.stayUntil ? Math.max(a.stayUntil - (st.stayFrom || now), until - now) : 15 * 60_000;
     $('count-i').style.width = Math.max(2, Math.min(100, (until - now) / span * 100)) + '%';

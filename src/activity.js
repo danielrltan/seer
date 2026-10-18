@@ -59,7 +59,7 @@ export function awakeReason({ pluggedIn, watching }) {
   const why = stayUntil ? `staying awake until ${clock(stayUntil)}`
     : watching ? 'you are watching'
     : a.busy ? `${a.busy} agent${a.busy > 1 ? 's' : ''} working`
-    : now < until ? `${a.waiting ? 'an agent is waiting for you, ' : ''}reachable for ${Math.ceil((until - now) / 60_000)} more min`
+    : now < until ? `${a.waiting ? 'an agent is waiting for you; ' : ''}kept awake ${Math.ceil((until - now) / 60_000)} more min after ${a.lastAt >= lastSeen ? 'the last agent' : 'you last checked'}`
     : null;
   return { awake: !!why, why: why || 'nothing needs it: sleeping to save battery', agentsBusy: a.busy, agentsWaiting: a.waiting, reachableUntil: last ? until : 0, stayUntil };
 }
