@@ -1,6 +1,5 @@
 // The desktop viewer page (/desktop): decodes the H.264 stream with WebCodecs onto a canvas and turns touch into
-// mouse and keyboard. One finger: tap = click, hold = right click, drag = drag. Two fingers: pinch = zoom,
-// move = pan when zoomed, otherwise scroll. The keyboard button opens the phone's keyboard and a key bar.
+// mouse and keyboard (gestures: see touch, below). The keyboard button opens the phone's keyboard and a key bar.
 // opts: wsPath (the socket; the page's own query string is passed on), dock (the Dock button), title.
 // openPath: POSTed first (with the page's query string); its { crop } (fractions of the screen) limits the view
 // to that part of the screen, and taps map into it (the Mac view's window).
@@ -174,59 +173,93 @@ const withMods = o => { if (mods.size) o.mods = [...mods]; return o; };
 function clearMods() { if (!mods.size) return; mods.clear(); document.querySelectorAll('[data-mod]').forEach(b => b.classList.remove('on')); }
 
 // ---------- touch ----------
-let one = null, two = null, holdTimer = null;
+// One finger, like any phone page: swipe = scroll (the page under the finger, with momentum), tap = click,
+// hold and then drag = mouse drag (select, move things), hold still = right click.
+// Two fingers: pinch = zoom the view, move while zoomed = pan it, move unzoomed = scroll. The kind of gesture
+// is decided once, from its first clear movement, and kept until the fingers lift.
+let one = null, two = null, holdTimer = null, armTimer = null, glide = null;
+const scale = () => { const r = canvas.getBoundingClientRect(); return r.width ? canvas.width / r.width : 1; };   // screen px -> remote px
+const scrollBy = (dx, dy) => { const k = scale(); send({ t: 'scroll', dx: Math.round(dx * k), dy: Math.round(dy * k) }); };
+function stopGlide() { if (glide) { cancelAnimationFrame(glide); glide = null; } }
+function startGlide(vx, vy) {                       // flick: keep scrolling, slowing down, like the phone does
+  let last = performance.now();
+  const step = now => {
+    const dt = now - last; last = now;
+    vx *= Math.pow(0.95, dt / 16); vy *= Math.pow(0.95, dt / 16);
+    if (Math.hypot(vx, vy) < 0.05) { glide = null; return; }
+    scrollBy(vx * dt, vy * dt);
+    glide = requestAnimationFrame(step);
+  };
+  glide = requestAnimationFrame(step);
+}
+
 stage.addEventListener('touchstart', e => {
   e.preventDefault();
+  stopGlide();
   if (e.touches.length === 1) {
     const t = e.touches[0];
-    one = { x0: t.clientX, y0: t.clientY, t0: Date.now(), dragging: false, held: false };
+    one = { x0: t.clientX, y0: t.clientY, t0: Date.now(), mode: null, armed: false, x: t.clientX, y: t.clientY, tm: performance.now(), vx: 0, vy: 0 };
+    armTimer = setTimeout(() => { if (one && !one.mode) one.armed = true; }, 300);
     holdTimer = setTimeout(() => {
-      if (!one || one.dragging) return;
-      one.held = true;
+      if (!one || one.mode) return;
+      one.mode = 'held';
       const p = toRemote(one.x0, one.y0);
-      send(withMods({ t: 'down', button: 'right', ...p })); send({ t: 'up', button: 'right', ...p }); clearMods();
+      send({ t: 'move', ...p }); send(withMods({ t: 'down', button: 'right', ...p })); send({ t: 'up', button: 'right', ...p }); clearMods();
       navigator.vibrate && navigator.vibrate(10);
-    }, 450);
+    }, 650);
   } else if (e.touches.length === 2) {
-    clearTimeout(holdTimer);
-    if (one && one.dragging) send({ t: 'up', ...toRemote(one.lastX, one.lastY) });
+    clearTimeout(holdTimer); clearTimeout(armTimer);
+    if (one && one.mode === 'drag') send({ t: 'up', ...toRemote(one.x, one.y) });
     one = null;
     const [a, b] = e.touches;
-    two = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), cx: (a.clientX + b.clientX) / 2, cy: (a.clientY + b.clientY) / 2, zooming: false };
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+    two = { d0: d, cx0: cx, cy0: cy, d, cx, cy, mode: null };
+    send({ t: 'move', ...toRemote(cx, cy) });        // scroll lands on what is between the fingers
   }
 }, { passive: false });
 
 stage.addEventListener('touchmove', e => {
   e.preventDefault();
   if (one && e.touches.length === 1) {
-    const t = e.touches[0];
-    if (!one.dragging && Math.hypot(t.clientX - one.x0, t.clientY - one.y0) > 10 && !one.held) {
-      clearTimeout(holdTimer); one.dragging = true;
-      send({ t: 'move', ...toRemote(one.x0, one.y0) }); send(withMods({ t: 'down', ...toRemote(one.x0, one.y0) }));
+    const t = e.touches[0], now = performance.now();
+    if (!one.mode && Math.hypot(t.clientX - one.x0, t.clientY - one.y0) > 10) {
+      clearTimeout(holdTimer); clearTimeout(armTimer);
+      const p = toRemote(one.x0, one.y0);
+      send({ t: 'move', ...p });                     // the pointer goes under the finger: scroll and drag act there
+      if (one.armed) { one.mode = 'drag'; send(withMods({ t: 'down', ...p })); } else one.mode = 'scroll';
     }
-    if (one.dragging) { one.lastX = t.clientX; one.lastY = t.clientY; send({ t: 'move', ...toRemote(t.clientX, t.clientY) }); }
+    if (one.mode === 'scroll') {
+      const dx = t.clientX - one.x, dy = t.clientY - one.y, dt = Math.max(1, now - one.tm);
+      scrollBy(dx, dy);
+      one.vx = 0.7 * one.vx + 0.3 * (dx / dt); one.vy = 0.7 * one.vy + 0.3 * (dy / dt);
+    } else if (one.mode === 'drag') send({ t: 'move', ...toRemote(t.clientX, t.clientY) });
+    one.x = t.clientX; one.y = t.clientY; one.tm = now;
   } else if (two && e.touches.length === 2) {
     const [a, b] = e.touches;
     const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
-    const ratio = d / two.d;
-    if (two.zooming || Math.abs(ratio - 1) > 0.06) {
-      two.zooming = true;
-      const sr = stage.getBoundingClientRect(), nz = Math.min(6, Math.max(1, zoom * ratio));
+    if (!two.mode) {
+      const spread = Math.abs(d - two.d0), moved = Math.hypot(cx - two.cx0, cy - two.cy0);
+      if (spread > 24 && spread > moved) two.mode = 'zoom';
+      else if (moved > 12) two.mode = zoom > 1.01 ? 'pan' : 'scroll';
+    }
+    if (two.mode === 'zoom') {
+      const sr = stage.getBoundingClientRect(), nz = Math.min(6, Math.max(1, zoom * (d / two.d)));
       const px = cx - sr.left, py = cy - sr.top;                       // keep the point under the fingers still
       panX = px - (px - panX) * (nz / zoom) + (cx - two.cx); panY = py - (py - panY) * (nz / zoom) + (cy - two.cy);
       zoom = nz; if (zoom === 1) { panX = panY = 0; } applyView();
-    } else if (zoom > 1.01) { panX += cx - two.cx; panY += cy - two.cy; applyView(); }
-    else send({ t: 'scroll', dx: Math.round((cx - two.cx) * 2), dy: Math.round((cy - two.cy) * 2) });
+    } else if (two.mode === 'pan') { panX += cx - two.cx; panY += cy - two.cy; applyView(); }
+    else if (two.mode === 'scroll') scrollBy(cx - two.cx, cy - two.cy);
     Object.assign(two, { d, cx, cy });
   }
 }, { passive: false });
 
 stage.addEventListener('touchend', e => {
   e.preventDefault();
-  clearTimeout(holdTimer);
+  clearTimeout(holdTimer); clearTimeout(armTimer);
   if (one && !e.touches.length) {
-    if (one.dragging) send({ t: 'up', ...toRemote(one.lastX, one.lastY) });
-    else if (!one.held && Date.now() - one.t0 < 450) {
+    if (one.mode === 'drag') send({ t: 'up', ...toRemote(one.x, one.y) });
+    else if (one.mode === 'scroll') { if (performance.now() - one.tm < 80) startGlide(one.vx, one.vy); }
+    else if (!one.mode && Date.now() - one.t0 < 650) {
       const p = toRemote(one.x0, one.y0);
       send({ t: 'move', ...p }); send(withMods({ t: 'down', ...p })); send({ t: 'up', ...p });
       primeKeyboard();
