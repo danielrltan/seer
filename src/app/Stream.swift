@@ -496,6 +496,7 @@ enum Focus {
     static let queue = DispatchQueue(label: "seer.focus")
     static var last: (text: Bool, tapped: Bool)?
     static func check(at p: CGPoint?) -> (text: Bool, tapped: Bool) {
+        if screenLocked { return (true, p != nil) }
         let sys = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(sys, 0.3)
         var focused: CFTypeRef?
@@ -514,7 +515,15 @@ enum Focus {
                 && AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &range) == .success
         }
         guard text, let p else { return (text, false) }
-        return (true, frame(el).insetBy(dx: -6, dy: -6).contains(p))
+        // A password field, or one whose frame can't be read, opens the keyboard on any tap: guessing wrong there
+        // leaves the owner unable to type at all.
+        let f = frame(el)
+        return (true, role == "AXSecureTextField" || f.isNull || f.isEmpty || f.insetBy(dx: -6, dy: -6).contains(p))
+    }
+    // The lock screen: its password box is all there is to type into, but Accessibility reports the focus of the
+    // app behind it, so a tap anywhere counts as a tap on the field.
+    static var screenLocked: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
     }
     // The element's frame in global top-left points, the same space as a click; empty if it has none.
     static func frame(_ el: AXUIElement) -> CGRect {
@@ -559,6 +568,15 @@ enum Input {
         }
         return f
     }
+    // A character's key and shift on a US keyboard, for typing where only real key presses count (the lock screen).
+    static let usPlain = "asdfhgzxcv\u{0}bqweryt123465=97-80]ou[ip\u{0}lj'k;\\,/nm.\u{0}\u{0}`"
+    static let usShift = "ASDFHGZXCV\u{0}BQWERYT!@#$^%+(&_*)}OU{IP\u{0}LJ\"K:|<?NM>\u{0}\u{0}~"
+    static func usKey(_ ch: Character) -> (CGKeyCode, Bool)? {
+        if ch == " " { return (49, false) }
+        if let i = usPlain.firstIndex(of: ch), ch != "\u{0}" { return (CGKeyCode(usPlain.distance(from: usPlain.startIndex, to: i)), false) }
+        if let i = usShift.firstIndex(of: ch), ch != "\u{0}" { return (CGKeyCode(usShift.distance(from: usShift.startIndex, to: i)), true) }
+        return nil
+    }
     static let keys: [String: CGKeyCode] = [
         "Enter": 36, "Tab": 48, "Space": 49, "Backspace": 51, "Escape": 53, "Delete": 117, "Home": 115, "End": 119,
         "PageUp": 116, "PageDown": 121, "ArrowLeft": 123, "ArrowRight": 124, "ArrowDown": 125, "ArrowUp": 126,
@@ -589,7 +607,18 @@ enum Input {
         case "scroll", "nudge", "press", "release", "click":
             Pad.queue.async { Pad.handle(j) }                                  // relative: the trackpad's own queue
         case "text":
+            let locked = Focus.screenLocked
             for ch in ((j["text"] as? String) ?? "") {
+                // The lock screen may ignore a typed character with no key behind it: there, press the real key
+                // (US layout) when there is one.
+                if locked, let (code, shift) = usKey(ch) {
+                    for down in [true, false] {
+                        let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down)
+                        if shift { e?.flags = .maskShift }
+                        e?.post(tap: .cghidEventTap)
+                    }
+                    continue
+                }
                 let utf16 = Array(String(ch).utf16)
                 for down in [true, false] {
                     let e = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: down)
