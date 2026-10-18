@@ -30,6 +30,7 @@ export const SPEC = {
   desktop:          { type: 'bool', def: false },
   macViewCloseMin:  { type: 'int', def: 2, min: 1, max: 30 },
   scrollSpeed:      { type: 'int', def: 100, min: 25, max: 200 },   // % of finger-for-finger
+  pointerSpeed:     { type: 'int', def: 100, min: 25, max: 300 },   // % of what the phone's trackpad sends
   // app
   launchAtLogin:    { type: 'bool', def: true },
 };

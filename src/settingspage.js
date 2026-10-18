@@ -81,6 +81,8 @@ ${BACKDROP}
     <input type="range" class="slider" data-k="macViewCloseMin" min="1" max="30" step="1" data-unit="min"></div>
   <div class="row col"><div class="top"><span class="l">Scroll speed<span class="d" id="scrollSpeed-d"></span></span><span class="val" id="scrollSpeed-v"></span></div>
     <input type="range" class="slider" data-k="scrollSpeed" min="25" max="200" step="5" data-unit="%"></div>
+  <div class="row col"><div class="top"><span class="l">Pointer speed<span class="d" id="pointerSpeed-d"></span></span><span class="val" id="pointerSpeed-v"></span></div>
+    <input type="range" class="slider" data-k="pointerSpeed" min="25" max="300" step="5" data-unit="%"></div>
 </div>
 
 <div class="sect">agents</div>

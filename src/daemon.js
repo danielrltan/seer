@@ -1,16 +1,18 @@
-// `seer daemon` (run by launchd): serves Seer home on 127.0.0.1:7399, which the tunnel publishes behind sign-in
-// at seer.<zone>, and holds the Mac awake (caffeinate -is) while any preview is running.
-// caffeinate cannot stop sleep when the lid is closed on battery: the Mac must stay open, or plugged in.
+// `seer daemon` (run by Seer.app): serves Seer home on 127.0.0.1:7399, which the tunnel publishes behind sign-in
+// at seer.<zone>, and keeps the Mac awake only while something needs it (power.js decides; the tick at the bottom
+// carries it out: caffeinate -is, and with away mode sleep disabled so a closed lid stays up).
 import fs from 'node:fs';
 import http from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { spawn, execFile } from 'node:child_process';
 import { list } from './core.js';
 import { tail } from './devserver.js';
 import { cleanName, loadConfig, saveConfig } from './store.js';
 import { HOME_PORT } from './services.js';
-import { reconcile, release, failover, battery, ruleInstalled, savePassword, hasPassword } from './awake.js';
+import { reconcile, release, failover, battery, ruleInstalled, savePassword, hasPassword, journal, claimJournal, sleepDisabled } from './awake.js';
 import { awakeReason, seen } from './activity.js';
-import { macStatus, lid, idleSeconds, sampleBattery } from './macstatus.js';
+import { macStatus, clamshell, idleSeconds, sampleBattery } from './macstatus.js';
+import { decide, sleptBetween, onWake, HOLD_OFF_MS } from './power.js';
 import { homePage } from './home.js';
 import { settingsPage } from './settingspage.js';
 import { settings, applySettings, FREEZABLE } from './settings.js';
@@ -23,8 +25,6 @@ import { localTarget, openSession, input as renderInput, closeSession, openWindo
 import { WebSocketServer } from 'ws';
 import { desktopPage } from './viewer.js';
 import { ensureStreamAuth } from './core.js';
-
-let away = { mode: 'starting' };
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -83,8 +83,16 @@ async function projects() {
   for (const [name, c] of Object.entries(loadConfig().cloud || {})) if (c.link) out.push({ name, href: c.link, state: 'on demand', where: 'cloud' });
   return out;
 }
+// awake is the last tick's decision, whole: label, why and countdown come from the same rules that hold the Mac
+// (power.js), so the page and the menu bar (label, why, stayUntil) cannot promise what the Mac will not do.
 export async function statusJson() {
-  const st = await macStatus({ awake: { awake: why.awake, label: why.awake ? (headless ? 'Headless' : 'Awake') : why.inUse ? 'In use' : lidState === 'closed' ? 'Sleeping' : 'Idle', why: why.why, inUse: !!why.inUse, mode: away.mode, stayUntil: why.stayUntil || 0, reachableUntil: why.reachableUntil || 0, headless, pluggedIn: !away.battery?.onBattery }, agentsBusy: why.agentsBusy || 0 });
+  const d = state || { running: false, headless: false, label: 'Starting', why: '', mode: 'starting', countdown: null, closingSleeps: false, notes: [] };
+  const awake = {
+    awake: d.running, label: d.label, why: d.why, inUse: !!why.inUse, mode: d.mode, headless: d.headless,
+    countdown: d.countdown, stayUntil: why.stayUntil || 0, reachableUntil: why.reachableUntil || 0,
+    external, closingSleeps: d.closingSleeps, pluggedIn: !lastBattery.onBattery,
+  };
+  const st = await macStatus({ awake, agentsBusy: why.agentsBusy || 0, lid: lidState, notes: d.notes });
   return { ...st, agents: runningAgents(), projects: await projects(), desktop: !!loadConfig().desktop };
 }
 
@@ -121,7 +129,14 @@ function logPage(name) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
-    if (req.headers['cf-access-jwt-assertion']) seen();          // someone opened a Seer page: they may come back soon
+    // Someone opened a Seer page or did something: they may come back soon (the reachable window), and a Mac that
+    // slept is theirs again (power.js sleepHold). The 5 s polls of an open page count for an hour after it was
+    // opened, so a forgotten tab cannot keep the Mac up all night.
+    if (req.headers['cf-access-jwt-assertion']) {
+      const poll = ['/status.json', '/ping', '/settings.json'].includes(url.pathname);
+      if (!poll && url.pathname !== '/sleep') { seen(); visitAt = backAt = Date.now(); }
+      else if (poll && Date.now() - visitAt < 3600_000) seen();
+    }
     if (url.pathname === '/s/check-result' && req.method === 'POST') {          // what the phone reported, for Seer's log
       let body = ''; for await (const c of req) { body += c; if (body.length > 4000) break; }
       log('stream check from a browser:\n' + body.slice(0, 4000));
@@ -196,8 +211,7 @@ const server = http.createServer(async (req, res) => {
         }
         log(`settings: ${[...Object.entries(patch).map(([k, v]) => `${k}=${JSON.stringify(v)}`), ...(hotspotPassword !== undefined ? ['hotspot password saved'] : [])].join(', ')}`);
         if (patch.desktop) startStream();
-        if (patch.away === false) await release().catch(() => {});
-        tick();
+        tick();                                        // away off: this tick allows sleep again (Seer holds a lid only with it on)
         return json(200, await settingsJson());
       } catch (e) { return json(400, { error: e.message }); }
     }
@@ -233,6 +247,7 @@ const server = http.createServer(async (req, res) => {
       return sleepNow(sleepPhone ? 'from the phone' : 'from the menu bar');
     }
     if (url.pathname === '/kick' && req.method === 'POST' && !req.headers['cf-connecting-ip'] && req.socket.remoteAddress === '127.0.0.1') {
+      backAt = Date.now();                             // an agent hook: something is working again after a sleep
       tick(); res.writeHead(204); return res.end();
     }
     if (url.pathname === '/ping') { res.writeHead(204, { 'cache-control': 'no-store' }); return res.end(); }
@@ -276,72 +291,186 @@ server.on('upgrade', async (req, socket, head) => {
   });
 });
 
-// Hold the Mac awake while something needs it (activity.js: plugged in, an agent working, someone watching, or
-// the reachable window after those) and let it sleep otherwise. caffeinate covers an open lid; away mode
-// (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
+// Hold the Mac awake while something needs it and let it sleep otherwise. power.js decides from what is read here;
+// this part only carries it out, one tick at a time (every 15 s, and at once for a hook, the lid, a viewer, a wake
+// from sleep, the end of a countdown, or a change from the page or the menu).
 let holdOff = 0;                                       // after Sleep now: hold nothing for a minute, whatever comes in
-let awake = null, running = false, windowSince = 0, why = { awake: false, why: 'starting' }, lidState = 'unknown', headless = false, netTick = 0, lastLid = 'unknown', lastDark = 0, ticking = false;
+let caf = null, why = { awake: false, why: 'starting' }, state = null, lidState = 'unknown', external = false;
+let lastBattery = { onBattery: false, pct: 100 }, lastWatching = false, lastClosed = false, lastDark = 0, lastLine = '', lastUnread = false;
+let windowSince = 0, netTick = 0, failures = 0, pmsetFailedAt = 0, visitAt = 0, backAt = 0, deadline = null, started = false, stopping = false;
 const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
 const checkNetwork = failover(log);
-// Sleep now: skip the reachable window and any stay-awake timer, put everything Seer did back (apps thawed, sound
-// on, sleep allowed again, Low Power Mode as it was), then sleep the Mac as the Apple menu's Sleep does.
+const watchingNow = () => viewerCount() > 0 || windowOpen();
+
+// caffeinate -w: it lets go by itself the moment this daemon dies, however it dies.
+function startCaffeinate() {
+  if (caf) return;
+  const c = spawn('/usr/bin/caffeinate', ['-is', '-w', String(process.pid)], { stdio: 'ignore' });
+  c.on('exit', () => { if (caf === c) caf = null; });
+  c.on('error', e => log(`caffeinate: ${e.message}`));
+  caf = c;
+}
+function stopCaffeinate() { caf?.kill(); caf = null; }
+
+// Everything Seer did, put back: apps thawed, sound on, then Low Power Mode and sleep allowed (last, since on a
+// closed lid the Mac sleeps the moment it runs).
+async function letGo() {
+  await thawAll(log).catch(e => log(`thaw: ${e.message}`));
+  await unmuteOutput().catch(() => {});
+  stopCaffeinate();
+  await release().catch(e => log(`release: ${e.message}`));
+}
+
+// Sleep now: skip the reachable window and any stay-awake timer, put everything Seer did back, then sleep the Mac
+// as the Apple menu's Sleep does. The tick runs after any tick in flight, so nothing it does lands after this.
 async function sleepNow(source) {
   log(`sleep now, asked ${source}`);
-  saveConfig({ stayAwakeUntil: 0, sleptAt: Date.now() });
-  holdOff = Date.now() + 60_000;
-  awake?.kill(); awake = null; running = false;
-  await thawAll(log).catch(() => {});
-  await unmuteOutput().catch(() => {});
-  await release().catch(e => log(`sleep now: ${e.message}`));
-  setTimeout(() => execFile('/usr/bin/pmset', ['sleepnow'], err => err && log(`sleep now: pmset ${err.message}`)), 1500);
+  holdOff = Date.now() + HOLD_OFF_MS;
+  saveConfig({ stayAwakeUntil: 0, sleptAt: Date.now(), sleepHold: { at: Date.now(), lid: lidState } });
+  await tick();
+  await letGo();
+  setTimeout(() => execFile('/usr/bin/pmset', ['sleepnow'], async err => {
+    if (err) return log(`sleep now: pmset ${err.message}`);
+    if (await sleepDisabled().catch(() => false)) log('sleep now: sleep is disabled outside Seer (pmset -g shows SleepDisabled 1), so the Mac cannot sleep');
+  }), 1500);
 }
-async function tick() {
-  if (ticking) return; ticking = true;
-  try { await tickOnce(); } finally { ticking = false; }
+
+// One tick at a time. A kick during a tick is not dropped: it runs once more right after.
+let ticking = null, again = false;
+function tick() {
+  if (!started || stopping) return Promise.resolve();
+  if (ticking) { again = true; return ticking; }
+  ticking = (async () => {
+    try { do { again = false; await safeTick(); } while (again && !stopping); } finally { ticking = null; }
+  })();
+  return ticking;
 }
+async function safeTick() {
+  try { await tickOnce(); failures = 0; }
+  catch (e) {
+    log(`tick failed: ${e.stack || e.message}`);
+    // A broken tick must not keep the Mac held on its last decision: after three in a row, let go.
+    if (++failures === 3) {
+      log('three ticks failed: letting the Mac sleep');
+      state = { running: false, headless: false, label: 'Idle', why: 'Seer error', mode: 'sleep allowed', countdown: null, closingSleeps: false, notes: [] };
+      await letGo();
+    }
+  }
+}
+
+let startup = null;
 async function tickOnce() {
-  const b = await battery().catch(() => ({ onBattery: false, pct: 100 }));
-  const watching = viewerCount() > 0 || windowOpen();
-  // In use: a key, click or trackpad touch in the last 2 minutes (lid open, or closed on an external display).
-  lidState = await lid().catch(() => 'unknown');
-  const idle = await idleSeconds().catch(() => null), inUse = idle !== null && idle < 120;
-  why = awakeReason({ watching, lidClosed: lidState === 'closed', inUse });
-  running = why.awake && Date.now() > holdOff;
-  // Headless: lid closed, nobody streaming or at it, no agent working. The Mac only waits, so it saves all it can.
-  headless = running && lidState === 'closed' && !watching && !inUse && !why.agentsBusy;
-  // Headless actions: screen off on closing; heavy apps frozen while it waits, thawed for an agent, a viewer or
-  // an open lid. Also when the Mac is about to sleep (nothing needs it) nothing stays frozen across the sleep.
-  const set = settings(), shut = lidState === 'closed' && !watching && !inUse && set.screenOff;
-  if (shut && lastLid !== 'closed') sleepDisplay();
-  if (shut && Date.now() - lastDark > 60_000) { sleepDisplay(); lastDark = Date.now(); }
-  if (headless && set.freeze) await freezeApps(log).catch(e => log(`freeze: ${e.message}`));
+  await startup;
+  const cfg = loadConfig(), set = settings(cfg);
+  const [b, cs, idle, rule] = await Promise.all([
+    battery().catch(() => ({ onBattery: false, pct: 100 })), clamshell().catch(() => null),
+    idleSeconds().catch(() => null), ruleInstalled().catch(() => false),
+  ]);
+  if (stopping) return;
+  // A failed ioreg read keeps the last lid: 'unknown' counts as open and would end a closed Mac's window early.
+  if (cs && (cs.lid !== 'unknown' || lidState === 'unknown')) { lidState = cs.lid; external = cs.external; }
+  lastBattery = b;
+  const inUse = idle !== null && idle < 120;            // a key, click or trackpad touch in the last 2 minutes
+  const watching = watchingNow();
+  why = awakeReason({ watching, lidClosed: lidState === 'closed' && !external, inUse });
+  const now = Date.now();
+  const d = decide({
+    now, lid: lidState, external, inUse, watching, why, set, away: !!cfg.away, rule, battery: b,
+    pmsetOk: now - pmsetFailedAt > 5 * 60_000,          // retried every 5 min, not every tick
+    holdOff, sleepHold: cfg.sleepHold || null, backAt, lowPowerByUs: !!journal().lowPowerByUs,
+  });
+  if (JSON.stringify(d.sleepHold) !== JSON.stringify(cfg.sleepHold || null)) saveConfig({ sleepHold: d.sleepHold });
+  state = d; lastWatching = watching;
+
+  // Taking hold: caffeinate first, sleep disabled in reconcile. Letting go: thaw, sound, then caffeinate off and
+  // sleep allowed last.
+  if (d.caffeinate) startCaffeinate();
+  // Screen off on closing, then again every minute (sleep disabled, a closed lid no longer turns the panel off).
+  // watching is read again here: a viewer that connected during this tick has just woken the display (stream.js).
+  if (d.screenOff && !watchingNow() && (!lastClosed || Date.now() - lastDark > 60_000)) { sleepDisplay(); lastDark = Date.now(); }
+  lastClosed = d.closed;
+  if (d.freeze && !watchingNow()) await freezeApps(log).catch(e => log(`freeze: ${e.message}`));
   else if (frozenCount()) await thawAll(log).catch(e => log(`thaw: ${e.message}`));
-  if (headless && set.mute) await muteOutput().catch(() => {});
+  if (d.mute) await muteOutput().catch(() => {});
   else await unmuteOutput().catch(() => {});
-  lastLid = lidState;
-  if (running && !awake) {
-    awake = spawn('/usr/bin/caffeinate', ['-is'], { stdio: 'ignore' });
-    awake.on('exit', () => { awake = null; });
-  } else if (!running && awake) { awake.kill(); awake = null; }
-  const next = loadConfig().away ? await reconcile(running, { headless }).then(r => ({ ...r, why: running ? why.why : r.why })).catch(e => ({ mode: 'error', why: e.message }))
-    : { mode: 'sleeps normally', why: 'away mode off (seer away on)' };
-  if (next.mode !== away.mode || next.why !== away.why) log(`away mode: ${next.mode} (${next.why})`);
-  away = next;
-  sampleBattery(b, away.mode);
+  if (!d.caffeinate) stopCaffeinate();
+  if (rule) {                                            // away off or nothing holding: this is also what allows sleep again
+    const r = await reconcile({ disableSleep: d.disableSleep, lowPower: d.lowPower }).catch(e => ({ error: e.message }));
+    if (r.error && d.disableSleep) { pmsetFailedAt = Date.now(); log(`pmset could not disable sleep: ${r.error}`); tick(); }
+    else if (r.error) log(`pmset could not allow sleep again: ${r.error}`);
+    else if (r.unread && !lastUnread) log('pmset -g could not be read: sleep left as it is');
+    lastUnread = !!r.unread;
+  }
+
+  const line = `${d.label}${d.why ? ` (${d.why})` : ''}${d.disableSleep ? ', lid can close' : ''}`;
+  if (line !== lastLine) log(`power: ${line}`);
+  lastLine = line;
+  sampleBattery(b, d.mode);
+  // The countdown's end is a tick of its own, so the Mac lets go when the page reaches 0:00.
+  clearTimeout(deadline);
+  if (d.countdown) deadline = setTimeout(tick, Math.max(1000, d.countdown.until - Date.now() + 500));
   // The Mac view's window closes a while (Settings: two minutes) after the last viewer of the stream has gone.
   if (windowOpen() && viewerCount() > 0) windowSince = Date.now();
   if (windowOpen() && viewerCount() === 0 && Date.now() - windowSince > set.macViewCloseMin * 60_000) closeWindow(log);
 }
 setInterval(tick, 15_000);
-// The lid, every 3 s: closing it should turn the screen off and settle the Mac now, not at the next 15 s tick.
-setInterval(async () => { if ((await lid().catch(() => lidState)) !== lidState) tick(); }, 3_000);
-thawAll(log).catch(() => {});                                        // a crash or restart never leaves apps frozen
-unmuteOutput().catch(() => {});                                      // or the sound off
-// The network check (hotspot failover): every 5 s while the lid is closed and the Mac is in use; every 30 s when
-// headless (it only waits) or the lid is open (someone is at it).
+
+// Every 3 s: a wake from sleep, the lid, or a viewer coming or going settles the Mac now, not at the next tick.
+// libuv's timers stop in sleep while the wall clock runs on, so a wake shows as the two clocks drifting apart.
+let beatWall = Date.now(), beatMono = performance.now();
+setInterval(async () => {
+  const wall = Date.now(), mono = performance.now();
+  const slept = sleptBetween({ wallBefore: beatWall, wallNow: wall, monoBefore: beatMono, monoNow: mono });
+  beatWall = wall; beatMono = mono;
+  if (slept) {
+    const cfg = loadConfig();
+    saveConfig(onWake({ sleptAt: slept, lid: lidState, prevSleptAt: cfg.sleptAt || 0, prevHold: cfg.sleepHold || null }));
+    lastClosed = false;                                  // screen off again if the lid is closed
+    log(`woke after ${Math.round((wall - slept) / 60_000)} min asleep`);
+    return tick();
+  }
+  const cs = await clamshell().catch(() => null);
+  if ((cs && (cs.lid !== lidState || cs.external !== external)) || watchingNow() !== lastWatching) tick();
+}, 3_000);
+
+// The network check (hotspot failover, only with the lid closed and the Mac held): every 5 s while something is
+// working, every 30 s when headless (it only waits).
 setInterval(() => {
-  if (++netTick % ((lidState === 'closed' && !headless) ? 1 : 6)) return;
-  checkNetwork(running && !!loadConfig().away).catch(e => log(`failover: ${e.message}`));
+  if (++netTick % (state?.failover && !state.headless ? 1 : 6)) return;
+  checkNetwork(!!state?.failover && !!loadConfig().away).catch(e => log(`failover: ${e.message}`));
 }, 5_000);
-tick();
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { awake?.kill(); await thawAll(log).catch(() => {}); await unmuteOutput().catch(() => {}); await release().catch(() => {}); process.exit(0); });
+
+// Nothing power-related starts until this daemon has the port: a second daemon (port taken) exits without
+// touching what the first one holds. Then: a crash or restart never leaves apps frozen or the sound off, this
+// daemon takes over the journal, and the watchdog starts. If this daemon dies with sleep disabled, apps frozen or
+// the sound off and no new daemon takes over within 45 s (Seer.app restarts it within 30), the watchdog puts them
+// back. caffeinate -w covers caffeinate itself.
+server.once('listening', () => {
+  started = true;
+  startup = Promise.all([thawAll(log).catch(() => {}), unmuteOutput().catch(() => {})]);
+  claimJournal();
+  try {
+    spawn(process.execPath, [fileURLToPath(new URL('./watchdog.js', import.meta.url)), String(process.pid)], { detached: true, stdio: 'ignore' }).unref();
+  } catch (e) { log(`watchdog: ${e.message}`); }
+  tick();
+});
+
+// Stopping (Seer.app quits, a deploy restarts it, or a crash): apps thawed and the sound on at once. If the Mac
+// is held, a 45 s caffeinate and the watchdog bridge a restart, so a deploy does not sleep a closed Mac mid-work;
+// with no new daemon, the watchdog allows sleep again. All within Seer.app's 5 s before it kills the daemon.
+async function shutdown(reason, code) {
+  if (stopping) return; stopping = true;
+  log(`stopping: ${reason}`);
+  if (!started) process.exit(code);
+  setTimeout(() => process.exit(code), 4000).unref();
+  await Promise.race([ticking, new Promise(r => setTimeout(r, 1500))]).catch(() => {});
+  await thawAll(log).catch(() => {});
+  await unmuteOutput().catch(() => {});
+  if (state?.running) spawn('/usr/bin/caffeinate', ['-is', '-t', '45'], { detached: true, stdio: 'ignore' }).unref();
+  else if (state) await release().catch(() => {});      // never decided: what the journal holds is the watchdog's
+  stopCaffeinate();
+  process.exit(code);
+}
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => shutdown(sig, 0));
+process.on('uncaughtException', e => shutdown(`crashed: ${e.stack || e.message}`, 1));
+process.on('unhandledRejection', e => shutdown(`crashed: ${e?.stack || e}`, 1));

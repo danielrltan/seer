@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // seer-hook busy|waiting|idle: Claude Code's UserPromptSubmit / Notification / Stop hooks. Loads only what it needs so a prompt is
-// never held up, and never fails.
+// never held up, and never fails. The fast path and the fallback: Claude's own sessions file decides when it has one
+// (activity.js), since Stop fires at the end of a turn even while background subagents or shells still work.
 import { recordHook } from '../src/activity.js';
 let input = '';
 if (!process.stdin.isTTY) for await (const c of process.stdin) input += c;

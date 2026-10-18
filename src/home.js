@@ -115,15 +115,16 @@ const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floo
   return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(ss).padStart(2, '0'); };
 let st = ${initial}, pings = [];
 
+// The countdown is the server's (power.js): shown only when the Mac really lets go at that time, so never while
+// an agent works, someone streams, or the lid is open with nothing else holding it.
 function tick() {                                       // the clock and the countdown, every second
   $('clock').textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const a = st.awake, now = Date.now();
-  const until = a.stayUntil || (a.awake && !st.agentsBusy && a.reachableUntil > now ? a.reachableUntil : 0);
+  const c = st.awake.countdown, now = Date.now(), until = c && c.until > now ? c.until : 0;
   $('count').hidden = !until;
   if (until) {
-    $('count-k').textContent = a.stayUntil ? 'left' : 'to sleep';
+    $('count-k').textContent = c.kind === 'stay' ? 'left' : 'to sleep';
     $('count-t').textContent = mmss(until - now);
-    const span = a.stayUntil ? Math.max(a.stayUntil - (st.stayFrom || now), until - now) : 15 * 60_000;
+    const span = c.from ? until - c.from : Math.max(until - (st.stayFrom || now), until - now);
     $('count-i').style.width = Math.max(2, Math.min(100, (until - now) / span * 100)) + '%';
   }
 }
@@ -150,7 +151,7 @@ function render() {
   // lid
   $('lid').textContent = st.lid === 'unknown' ? '—' : st.lid === 'closed' ? 'Closed' : 'Open';
   $('lap-screen').setAttribute('d', st.lid === 'closed' ? 'M4 18.5h28' : 'M7 3h22v14H7z');
-  $('lid-s').textContent = st.lid === 'closed' && a.inUse ? 'external display' : '';
+  $('lid-s').textContent = st.lid === 'closed' && (a.external || a.inUse) ? 'external display' : '';
   // stay awake
   $('stay-x').hidden = !a.stayUntil;
   $('stay-now').textContent = a.stayUntil ? 'until ' + clockOf(a.stayUntil) : '';

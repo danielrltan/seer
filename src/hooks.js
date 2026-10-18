@@ -1,6 +1,7 @@
 // Claude Code hooks that tell Seer when an agent is working: busy on each prompt, waiting when it needs the owner,
-// idle when it stops. Added to ~/.claude/settings.json (backed up first) beside the hooks already there; run
-// again, it changes nothing.
+// idle when its turn ends. They wake Seer at once; whether the agent is still working after Stop (background
+// subagents, workflows, shells) comes from Claude's sessions file (activity.js). Added to ~/.claude/settings.json
+// (backed up first) beside the hooks already there; run again, it changes nothing.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

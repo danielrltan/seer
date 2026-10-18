@@ -27,7 +27,7 @@ const HELP = `seer: run a build and get a private link to open it on your phone
   seer cloud up [path] --name N --cmd "start command" [--build "cmd"]   a cloud copy on Fly (sleeps when idle)
   seer cloud status | stop | down <name>
   seer desktop on|off     the parked remote desktop (/desktop): off unless turned on
-  seer away on|off        keep the Mac awake while previews run, even with the lid closed (off by default)
+  seer away on|off        keep the Mac awake with the lid closed while something needs it (off by default)
   seer away install       let Seer keep the Mac awake with the lid closed (asks for sudo once)
   seer away hotspot "SSID"  fail over to this phone hotspot when the Wi-Fi goes (password on stdin)
   seer away status        what away mode is doing now
@@ -131,7 +131,7 @@ try {
     }
     case 'hook': {                          // from Claude Code's hooks: never slow, never failing
       let input = ''; if (!process.stdin.isTTY) for await (const c of process.stdin) input += c;
-      recordHook(arg === 'busy' ? 'busy' : 'idle', input);
+      recordHook(['busy', 'waiting'].includes(arg) ? arg : 'idle', input);
       break;
     }
     case 'away': await awayCmd(arg, positionals[2]); break;

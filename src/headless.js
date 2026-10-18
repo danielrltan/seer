@@ -26,12 +26,16 @@ export async function muteOutput() {
 }
 export async function unmuteOutput() {
   if (!fs.existsSync(MUTED)) return;
-  fs.unlinkSync(MUTED);
   await osa('set volume without output muted');
+  if ((await osa('output muted of (get volume settings)')).trim() === 'false') fs.rmSync(MUTED, { force: true });   // else retried next tick
 }
 
-const journal = () => { try { return JSON.parse(fs.readFileSync(JOURNAL, 'utf8')); } catch { return { frozen: [] }; } };
-const save = j => fs.writeFileSync(JOURNAL, JSON.stringify(j, null, 2) + '\n', { mode: 0o600 });
+const journal = () => { try { const j = JSON.parse(fs.readFileSync(JOURNAL, 'utf8')); return Array.isArray(j?.frozen) ? j : { frozen: [] }; } catch { return { frozen: [] }; } };
+const save = j => {                                              // write then rename: a torn journal would lose freezes
+  const tmp = `${JOURNAL}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(j, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(tmp, JOURNAL);
+};
 export const frozenCount = () => journal().frozen.length;
 
 async function startTime(pid) { return (await run('/bin/ps', ['-o', 'lstart=', '-p', String(pid)])).trim(); }

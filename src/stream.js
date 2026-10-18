@@ -66,9 +66,10 @@ function connectHelper(log) {
       if (type === 1) lastConfig = msg;
       if (type === 4) {                         // status; the same error again within 30 s is not news (one per tap otherwise)
         let text = frame.subarray(5).toString();
+        if (text.startsWith('{"cursor"')) { for (const v of viewers) v.send(text); continue; }   // up to 30 a second: not logged or deduped
         if (/Screen Recording|declined TCC|screen-recording/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Screen Recording settings on the Mac' });
         else if (/"error":"accessibility"|Accessibility not allowed|needs Accessibility/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Accessibility settings on the Mac' });
-        if (text === lastStatus.text && Date.now() - lastStatus.at < 30_000) continue;
+        if (/"error"/.test(text) && text === lastStatus.text && Date.now() - lastStatus.at < 30_000) continue;   // only repeated errors
         lastStatus = { text, at: Date.now() };
         log(`stream: ${text}`); for (const v of viewers) v.send(text); continue;
       }
@@ -115,15 +116,41 @@ export async function restoreDock() {
 }
 
 // ---------- viewers ----------
-const INPUT = new Set(['down', 'up', 'move', 'scroll', 'text', 'key']);
+// Absolute (down, up, move: x, y in 0..1 of the screen) and relative, at the Mac's cursor, from the phone as a
+// trackpad: nudge (dx, dy points), press / release / click (button, click count), and scroll with phases
+// (begin, move, end; vx, vy the release velocity in points per ms). Anything malformed is dropped whole.
+const INPUT = new Set(['down', 'up', 'move', 'scroll', 'text', 'key', 'nudge', 'press', 'release', 'click']);
+const ABSOLUTE = new Set(['down', 'up', 'move']);
+const PHASES = new Set(['begin', 'move', 'end']);
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const finite = v => typeof v === 'number' && Number.isFinite(v);
+const clamp = (v, lim) => Math.max(-lim, Math.min(lim, num(v)));
 export function cleanInput(m) {
-  if (!INPUT.has(m.t)) return null;
+  if (!m || !INPUT.has(m.t)) return null;
   const out = { cmd: 'input', t: m.t };
-  if ('x' in m) { out.x = Math.min(Math.max(num(m.x), 0), 1); out.y = Math.min(Math.max(num(m.y), 0), 1); }
-  if (m.button === 'right') out.button = 'right';
+  if (ABSOLUTE.has(m.t) && 'x' in m) { out.x = Math.min(Math.max(num(m.x), 0), 1); out.y = Math.min(Math.max(num(m.y), 0), 1); }
+  if (['press', 'release', 'click'].includes(m.t)) {
+    if (m.button !== 'left' && m.button !== 'right') return null;
+    out.button = m.button;
+  } else if (m.button === 'right') out.button = 'right';
   if (Array.isArray(m.mods)) out.mods = m.mods.filter(k => ['cmd', 'shift', 'alt', 'ctrl'].includes(k));
-  if (m.t === 'scroll') { out.dx = Math.max(-2000, Math.min(2000, num(m.dx))); out.dy = Math.max(-2000, Math.min(2000, num(m.dy))); }
+  if (m.t === 'nudge') {
+    if (!finite(m.dx) || !finite(m.dy)) return null;
+    out.dx = clamp(m.dx, 800); out.dy = clamp(m.dy, 800);
+  }
+  if (m.t === 'click') {
+    const count = m.count ?? 1;
+    if (!Number.isInteger(count) || count < 1 || count > 3) return null;
+    out.count = count;
+  }
+  if (m.t === 'scroll') {
+    out.dx = clamp(m.dx, 2000); out.dy = clamp(m.dy, 2000);
+    if (m.phase !== undefined) {
+      if (!PHASES.has(m.phase)) return null;
+      out.phase = m.phase;
+      if (m.phase === 'end') { out.vx = clamp(m.vx, 20); out.vy = clamp(m.vy, 20); }
+    }
+  }
   if (m.t === 'text') out.text = String(m.text || '').slice(0, 500);
   if (m.t === 'key') out.key = String(m.key || '').slice(0, 20);
   return out;
@@ -142,28 +169,34 @@ export async function authorizeViewer(req, socket, log, what) {
 
 // Scrolling: the viewer sends how far the finger moved (swipe up: dy < 0, the page should move up, as on iOS).
 // SeerStream turns it into scroll-wheel events, which macOS reverses when "natural scrolling" is on (the
-// default), so the sign follows that setting, read again every minute in case it is changed.
+// default), so the sign follows that setting, read again every minute in case it is changed. A trackpad scroll's
+// release velocity (vx, vy) is a direction too, so it flips with the deltas.
 let natural = true;
 function readNatural() {
   execFile('/usr/bin/defaults', ['read', '-g', 'com.apple.swipescrolldirection'], (err, out) => { natural = err ? true : String(out).trim() !== '0'; });
 }
 readNatural(); setInterval(readNatural, 60_000).unref();
-const wheel = input => (input.t === 'scroll' && natural ? { ...input, dx: -input.dx, dy: -input.dy } : input);
+export function flipScroll(input, isNatural) {
+  if (input.t !== 'scroll' || !isNatural) return input;
+  const out = { ...input, dx: -input.dx, dy: -input.dy };
+  if ('vx' in input) { out.vx = -input.vx; out.vy = -input.vy; }
+  return out;
+}
+const wheel = input => flipScroll(input, natural);
 
-// Scroll arrives in uneven bursts (the phone's touch rate, then the network bunching it) and the Mac would apply
-// each burst at once: a judder. So scroll goes into a reservoir that drains every 8 ms by a third of what is
-// left (about 20 ms behind the finger), which turns bursts into an even glide. Settings: scroll speed.
-let resX = 0, resY = 0, drain = null;
-function queueScroll(input) {
-  const k = settings().scrollSpeed / 100;
-  resX += input.dx * k; resY += input.dy * k;
-  drain ||= setInterval(() => {
-    const near = Math.abs(resX) < 2 && Math.abs(resY) < 2;
-    const dx = Math.round(near ? resX : resX * 0.34), dy = Math.round(near ? resY : resY * 0.34);
-    resX -= dx; resY -= dy;
-    if (dx || dy) toHelper({ cmd: 'input', t: 'scroll', dx, dy });
-    if (near) { clearInterval(drain); drain = null; resX = resY = 0; }
-  }, 8);
+// Settings: scroll speed and pointer speed, as factors on what the phone sends. Smoothing and momentum happen in
+// SeerStream at the display's rate (Pad), so network jitter never reaches the screen; here it is only scaled.
+export function scaleInput(input, { scrollSpeed = 100, pointerSpeed = 100 } = {}) {
+  const k = input.t === 'scroll' ? scrollSpeed / 100 : input.t === 'nudge' ? pointerSpeed / 100 : 1;
+  if (k === 1) return input;
+  const out = { ...input, dx: input.dx * k, dy: input.dy * k };
+  if ('vx' in input) { out.vx = input.vx * k; out.vy = input.vy * k; }
+  return out;
+}
+let speeds = { at: 0 };                                     // read once a second, not on every touch (120 a second)
+function speedNow() {
+  if (Date.now() - speeds.at > 1000) { const s = settings(); speeds = { at: Date.now(), scrollSpeed: s.scrollSpeed, pointerSpeed: s.pointerSpeed }; }
+  return speeds;
 }
 
 export function initStream(log) {
@@ -172,6 +205,11 @@ export function initStream(log) {
 }
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+// A phone that drops off without closing (sleep, lost signal) would count as watching forever and hold the Mac
+// awake: ping every viewer every 30 s and drop any that did not answer the last one.
+setInterval(() => {
+  for (const ws of viewers) { if (!ws.alive) { ws.terminate(); continue; } ws.alive = false; try { ws.ping(); } catch {} }
+}, 30_000).unref();
 export async function streamUpgrade(req, socket, head, log) {
   {
     req.who = await authorizeViewer(req, socket, log, 'desktop');
@@ -179,9 +217,10 @@ export async function streamUpgrade(req, socket, head, log) {
     wss.handleUpgrade(req, socket, head, ws => {
       log(`desktop viewer connected (${req.who}); ${viewers.size + 1} watching`);
       viewers.add(ws);
+      ws.alive = true; ws.on('pong', () => { ws.alive = true; });
       // Wake the display (a sleeping screen streams black): a short user-activity assertion, like a key press.
       execFile('/usr/bin/caffeinate', ['-u', '-t', '10'], () => {});
-      ws.needKey = true;
+      ws.needKey = true; ws.held = new Set(); ws.scrolling = false;
       if (!helper) ws.send(JSON.stringify({ error: 'Seer Stream is not running on the Mac' }));
       if (viewers.size === 1) startCapture(); else { if (lastConfig) ws.send(lastConfig); requestKey(); }
       watchClipboard(text => { for (const v of viewers) v.send(JSON.stringify({ clip: text })); }, log);
@@ -191,9 +230,16 @@ export async function streamUpgrade(req, socket, head, log) {
         if (m.t === 'keyframe') return requestKey();
         if (m.t === 'dock') return toggleDock();
         const input = cleanInput(m);
-        if (input) input.t === 'scroll' ? queueScroll(wheel(input)) : toHelper(wheel(input));
+        if (!input) return;
+        if (input.t === 'press') ws.held.add(input.button);
+        if (input.t === 'release') ws.held.delete(input.button);
+        if (input.t === 'scroll' && input.phase) ws.scrolling = input.phase !== 'end';
+        toHelper(scaleInput(wheel(input), speedNow()));
       });
       ws.on('close', () => {
+        // A phone that drops mid-drag would leave the Mac's button held down, or its scroll gesture open.
+        for (const button of ws.held) toHelper({ cmd: 'input', t: 'release', button });
+        if (ws.scrolling) toHelper({ cmd: 'input', t: 'scroll', phase: 'end', dx: 0, dy: 0, vx: 0, vy: 0 });
         viewers.delete(ws);
         log(`desktop viewer left; ${viewers.size} watching`);
         if (!viewers.size) { toHelper({ cmd: 'stop' }); lastConfig = null; restoreDock(); stopClipboard(); }

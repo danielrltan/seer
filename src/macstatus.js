@@ -4,10 +4,9 @@
 import net from 'node:net';
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
-import { battery, netState, WIFI_HELPER, wifiArgs, ruleInstalled } from './awake.js';
+import { battery, netState, WIFI_HELPER, wifiArgs } from './awake.js';
 import path from 'node:path';
 import { HOME, loadConfig } from './store.js';
-import { settings } from './settings.js';
 
 const run = (file, args) => new Promise(resolve => execFile(file, args, { timeout: 5000 }, (err, out) => resolve(err ? '' : String(out))));
 
@@ -26,11 +25,16 @@ export async function idleSeconds() {
   return m ? Number(m[1]) / 1e9 : null;
 }
 
-export async function lid() {
+// The lid, and whether a closed lid is on an external display (clamshell mode: macOS keeps the Mac up itself and
+// someone may be at that display, so it is never headless). AppleClamshellCausesSleep reads No only then; it
+// does not follow disablesleep.
+export async function clamshell() {
   const out = await run('/usr/sbin/ioreg', ['-r', '-k', 'AppleClamshellState', '-d', '4']);
   const m = out.match(/"AppleClamshellState"\s*=\s*(Yes|No)/);
-  return m ? (m[1] === 'Yes' ? 'closed' : 'open') : 'unknown';
+  const lid = m ? (m[1] === 'Yes' ? 'closed' : 'open') : 'unknown';
+  return { lid, external: lid === 'closed' && /"AppleClamshellCausesSleep"\s*=\s*No/.test(out) };
 }
+export const lid = async () => (await clamshell()).lid;
 
 function connectMs(host, port = 443) {
   return new Promise(resolve => {
@@ -58,7 +62,6 @@ async function network() {
   return { kind, iface, internetMs, rssi, signal, ssid: wifi?.ssid || null, txRate: wifi?.txRate || null };
 }
 
-// awake: { awake, why, mode } from the daemon (activity.js + away mode); agentsBusy likewise.
 const DRAIN_LOG = path.join(HOME, 'battery.jsonl');
 let lastSample = 0;
 // Called every daemon tick: one sample a minute (time, charge, on battery, the state the Mac was in).
@@ -83,15 +86,11 @@ function drainRate(state) {
   return Math.max(0, +((run[0].pct - run.at(-1).pct) / ((run.at(-1).t - run[0].t) / 3600_000)).toFixed(1));
 }
 
-export async function macStatus({ awake, agentsBusy }) {
-  const [batt, lidState, netw, awayAllowed] = await Promise.all([batteryDetail(), lid(), network(), ruleInstalled()]);
+// lid and notes come from the daemon's last tick (power.js), so the page shows the lid the decision was made on
+// and only help lines that decision found true.
+export async function macStatus({ awake, agentsBusy, lid: lidState, notes = [] }) {
+  const [batt, netw] = await Promise.all([batteryDetail(), network()]);
   const cfg = loadConfig();
   const hotspot = { name: cfg.hotspotSsid || null, offlineFor: netState.downSince ? Math.round((Date.now() - netState.downSince) / 1000) : 0, joining: netState.joining, lastJoin: netState.lastJoin };
-  // What needs the owner's attention, most urgent first; empty when all is well.
-  const help = [];
-  const floor = settings(cfg).sleepBelow;
-  if (!batt.pluggedIn && batt.pct <= floor + 5) help.push(`Battery ${batt.pct}%. It sleeps at ${floor}% unless plugged in.`);
-  if (agentsBusy && !awayAllowed) help.push('Closing the lid will sleep it. Run seer away install on the Mac.');
-  else if (agentsBusy && !cfg.away) help.push('Closing the lid will sleep it. Turn on Stay awake with the lid closed in Settings.');
-  return { at: Date.now(), battery: { ...batt, drainPerHour: batt.pluggedIn ? null : drainRate(awake.mode) }, lid: lidState, network: netw, awake, agentsBusy, hotspot, help };
+  return { at: Date.now(), battery: { ...batt, drainPerHour: batt.pluggedIn ? null : drainRate(awake.mode) }, lid: lidState || await lid(), network: netw, awake, agentsBusy, hotspot, help: notes };
 }

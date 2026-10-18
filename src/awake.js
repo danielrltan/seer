@@ -1,9 +1,11 @@
-// Away mode: keep the Mac (and its tunnel) up with the lid closed while a preview is running, and fail over to
-// a phone hotspot when the Wi-Fi goes. `pmset -a disablesleep 1` is the one setting that outlasts closing the
-// lid; it runs through a sudoers rule that allows only four pmset commands. Battery floors keep a closed Mac
-// in a bag from running itself flat, and the hotspot is joined by a small CoreWLAN helper (seer-wifi).
+// Away mode: keep the Mac (and its tunnel) up with the lid closed while something needs it (power.js decides
+// what), and fail over to a phone hotspot when the Wi-Fi goes. `pmset -a disablesleep 1` is the one setting that
+// outlasts closing the lid; it runs through a sudoers rule that allows only four pmset commands. Battery floors
+// keep a closed Mac in a bag from running itself flat, and the hotspot is joined by a small CoreWLAN helper
+// (seer-wifi).
 //
-// Seer only undoes what it did: awake.json records whether IT turned disablesleep / Low Power Mode on.
+// Seer only undoes what it did: awake.json records whether IT turned disablesleep / Low Power Mode on, and which
+// daemon holds them (pid), so the watchdog (watchdog.js) can undo them if that daemon dies with no successor.
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -17,8 +19,7 @@ export const WIFI_HELPER = process.env.SEER_APP || path.join(HOME, 'bin', 'seer-
 export const wifiArgs = args => (process.env.SEER_APP ? ['wifi', ...args] : args);
 const JOURNAL = path.join(HOME, 'awake.json');
 // % on battery (Settings: lowPowerBelow, sleepBelow). Low Power Mode at 30% stretches what is left; at 15% the
-// Mac is let sleep, which still leaves enough to open it and get back online later. Low Power Mode comes off
-// again 5 points above where it went on (or on power).
+// Mac is let sleep, which still leaves enough to open it and get back online later (power.js).
 export const SUDOERS_FILE = '/etc/sudoers.d/seer';
 
 function run(file, args, { input, timeout = 15_000 } = {}) {
@@ -29,8 +30,15 @@ function run(file, args, { input, timeout = 15_000 } = {}) {
   });
 }
 
-const journal = () => { try { return JSON.parse(fs.readFileSync(JOURNAL, 'utf8')); } catch { return {}; } };
-const saveJournal = j => fs.writeFileSync(JOURNAL, JSON.stringify(j, null, 2) + '\n', { mode: 0o600 });
+export const journal = () => { try { return JSON.parse(fs.readFileSync(JOURNAL, 'utf8')) || {}; } catch { return {}; } };
+// Write then rename: a torn awake.json would read as {} and Seer would never undo what it set.
+const saveJournal = j => {
+  const tmp = `${JOURNAL}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(j, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(tmp, JOURNAL);
+};
+// This daemon now owns whatever the journal says Seer set (a restart takes over from the last one).
+export function claimJournal() { saveJournal({ ...journal(), pid: process.pid }); }
 
 export function sudoersRule(user) {
   const cmds = ['-a disablesleep 1', '-a disablesleep 0', '-b lowpowermode 1', '-b lowpowermode 0'].map(a => `${PMSET} ${a}`);
@@ -38,8 +46,10 @@ export function sudoersRule(user) {
 }
 export const ruleInstalled = async () => (await run(SUDO, ['-n', '-l', PMSET, '-a', 'disablesleep', '1'])).code === 0;
 
+// null when pmset could not be read: never mistaken for "off", which would make Seer forget what it set.
 export async function sleepDisabled() {
-  const { stdout } = await run(PMSET, ['-g']);
+  const { code, stdout } = await run(PMSET, ['-g']);
+  if (code || !/Currently in use:/.test(stdout)) return null;
   return /^\s*SleepDisabled\s+1\b/m.test(stdout);
 }
 export async function battery() {
@@ -47,47 +57,57 @@ export async function battery() {
   const pct = Number((stdout.match(/(\d+)%/) || [])[1]);
   return { onBattery: /'Battery Power'/.test(stdout), pct: Number.isFinite(pct) ? pct : 100 };
 }
-async function lowPowerOn() {
-  const { stdout } = await run(PMSET, ['-g', 'custom']);
+async function lowPowerOn() {                                         // null when unreadable, as sleepDisabled
+  const { code, stdout } = await run(PMSET, ['-g', 'custom']);
+  if (code || !/Battery Power:/.test(stdout)) return null;
   const section = stdout.split(/^AC Power:/m)[0];                     // the Battery Power: block comes first
   return /lowpowermode\s+1\b/.test(section);
 }
 const pm = args => run(SUDO, ['-n', PMSET, ...args]);
 
-// Called by the daemon every tick: wantAwake (activity.js), and headless (lid closed, nobody streaming, no agent
-// working): then Low Power Mode goes on at any charge, not only below 30%, and comes off when streaming starts.
-// Returns what away mode is doing.
-export async function reconcile(wantAwake, { headless = false } = {}) {
-  if (!(await ruleInstalled())) return { mode: 'sleeps with the lid closed', why: 'away mode not installed (seer away install)' };
-  const j = journal(), b = await battery(), set = settings();
-  const LOW_POWER_BELOW = set.lowPowerBelow, RELEASE_BELOW = set.sleepBelow, RESTORE_ABOVE = set.lowPowerBelow + 5;
-  let want = wantAwake, why = wantAwake ? 'a preview is running' : 'no preview running';
-  if (want && b.onBattery && b.pct < RELEASE_BELOW) { want = false; why = `battery ${b.pct}%: letting the Mac sleep`; }
-
-  const lowPower = want && b.onBattery && ((headless && set.headlessLowPower) || b.pct < LOW_POWER_BELOW);
-  if (lowPower && !j.lowPowerByUs && !(await lowPowerOn())) {
-    if ((await pm(['-b', 'lowpowermode', '1'])).code === 0) j.lowPowerByUs = true;
-  } else if (j.lowPowerByUs && !lowPower && (!headless || !set.headlessLowPower || !b.onBattery || b.pct >= RESTORE_ABOVE)) {
-    if ((await pm(['-b', 'lowpowermode', '0'])).code === 0) j.lowPowerByUs = false;
-  }
-
-  const disabled = await sleepDisabled();
-  if (want && !disabled) {
-    const r = await pm(['-a', 'disablesleep', '1']);
-    if (r.code === 0) j.sleepDisabledByUs = true;
-    else why = `pmset failed: ${r.stderr.trim()}`;
-  } else if (!want && disabled && j.sleepDisabledByUs) {
-    if ((await pm(['-a', 'disablesleep', '0'])).code === 0) j.sleepDisabledByUs = false;
-  }
-  saveJournal(j);
-  return { mode: !want ? 'normal sleep' : headless ? 'headless' : 'lid-closed awake', why, battery: b, lowPowerByUs: !!j.lowPowerByUs };
-}
-
-export async function release() {                                     // seer uninstall, daemon shutdown
+// Called by the daemon every tick with what power.js decided: sleep disabled (lid can close) and Low Power Mode.
+// Returns { error } when pmset refused, so the page can say closing the lid will sleep it.
+export async function reconcile({ disableSleep, lowPower }) {
   const j = journal();
-  if (j.sleepDisabledByUs) await pm(['-a', 'disablesleep', '0']);
-  if (j.lowPowerByUs) await pm(['-b', 'lowpowermode', '0']);
-  saveJournal({});
+  const lp = await lowPowerOn();                                      // null (unreadable): leave it for this tick
+  if (lp !== null) {
+    // Turned off by hand while Seer held it: not ours any more, and not turned on again until the next time.
+    if (j.lowPowerByUs && !lp) { j.lowPowerByUs = false; j.lowPowerRefused = true; }
+    if (!lowPower) delete j.lowPowerRefused;
+    if (lowPower && !j.lowPowerByUs && !lp && !j.lowPowerRefused) {
+      if ((await pm(['-b', 'lowpowermode', '1'])).code === 0) j.lowPowerByUs = true;
+    } else if (!lowPower && j.lowPowerByUs) {
+      if ((await pm(['-b', 'lowpowermode', '0'])).code === 0) j.lowPowerByUs = false;
+    }
+  }
+
+  let error = '';
+  const disabled = await sleepDisabled();
+  if (disabled === null) {                                            // unreadable: change nothing, try next tick
+    saveJournal({ ...j, pid: process.pid });
+    return { error: '', unread: true, lowPowerByUs: !!j.lowPowerByUs, sleepDisabledByUs: !!j.sleepDisabledByUs };
+  }
+  if (j.sleepDisabledByUs && !disabled) j.sleepDisabledByUs = false;   // someone allowed sleep again: not ours now
+  if (disableSleep && !disabled) {
+    const r = await pm(['-a', 'disablesleep', '1']);
+    if (r.code === 0) j.sleepDisabledByUs = true; else error = r.stderr.trim() || `pmset exit ${r.code}`;
+  } else if (!disableSleep && disabled && j.sleepDisabledByUs) {
+    const r = await pm(['-a', 'disablesleep', '0']);
+    if (r.code === 0) j.sleepDisabledByUs = false; else error = r.stderr.trim() || `pmset exit ${r.code}`;
+  }
+  saveJournal({ ...j, pid: process.pid });
+  return { error, lowPowerByUs: !!j.lowPowerByUs, sleepDisabledByUs: !!j.sleepDisabledByUs };
+}
+export const heldByUs = () => { const j = journal(); return !!(j.sleepDisabledByUs || j.lowPowerByUs); };
+
+// seer uninstall, away off, Sleep now, daemon shutdown. Low Power Mode first, sleep last: on a closed lid the Mac
+// sleeps the moment sleep is allowed. A flag is cleared only when its undo worked, so a failure is retried.
+export async function release() {
+  const j = journal();
+  if (j.lowPowerByUs && (await pm(['-b', 'lowpowermode', '0'])).code === 0) j.lowPowerByUs = false;
+  if (j.sleepDisabledByUs && (await pm(['-a', 'disablesleep', '0'])).code === 0) j.sleepDisabledByUs = false;
+  saveJournal(j);
+  return !j.lowPowerByUs && !j.sleepDisabledByUs;
 }
 
 // ---------- hotspot failover ----------
