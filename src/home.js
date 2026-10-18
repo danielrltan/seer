@@ -52,6 +52,9 @@ ${appHead}
 /* the Mac's state as the eye: open, its pupil turning while an agent works, shut while the Mac sleeps */
 .hero .eye.big{flex:none;width:66px;height:48px}
 .hero #sleep-b{flex:none;margin-left:auto}
+.hero #view-b{flex:none}
+.hero .hfoot:has(#count:not([hidden])){flex-wrap:wrap;row-gap:12px}   /* a countdown showing: a row of its own above the buttons */
+.hero .hfoot:has(#count:not([hidden])) .count{flex:1 1 100%;order:-1}
 #sleep-b.armed{background:rgba(255,90,95,.2);color:#ffd9da;box-shadow:inset 0 1px 0 rgba(255,200,200,.25),0 0 0 .5px rgba(255,90,95,.6)}
 .count .t{font:700 20px/1 var(--round);font-variant-numeric:tabular-nums;min-width:70px}
 /* stats, by weight: battery first and widest, with the biggest number; then ping, network and lid as three
@@ -74,6 +77,7 @@ ${appHead}
 .bchart #bchart-l{fill:none;stroke:var(--live);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;opacity:.8}
 .bchart.red #bchart-l{stroke:var(--red)}.bchart.red stop{stop-color:var(--red)}
 .tile.wide .brow{position:relative}
+.bnote{margin:10px 0 0;font-size:13px;line-height:1.35;color:var(--amber);text-wrap:balance}   /* when the battery decides: in its own card, wrapped evenly */
 .tile .s{font:500 12px var(--mono);color:var(--ink3);margin-top:auto;padding-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .green{color:var(--live)!important;text-shadow:0 0 18px var(--glow)}.amber{color:var(--amber)!important}.red{color:var(--red)!important}
 svg.scope{width:100%;height:28px;margin-top:10px;overflow:visible}
@@ -189,12 +193,12 @@ ${BACKDROP}
 <section class="glass hero">
   <div class="top"><span class="k dev" id="dev">mac</span><span class="tr"><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span><i class="dev-ic" id="dev-ic"></i></span></div>
   <div class="srow">${MARK.replace('class="eye"', 'class="eye big" id="eye"')}<div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div></div>
-  <div class="hfoot"><div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep</span></button></div>
+  <div class="hfoot"><a class="btn" id="view-b" href="/desktop" hidden aria-label="View screen">${BTN.screen}<span>View screen</span></a><div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep</span></button></div>
 </section>
 
 <div id="help"></div>
 
-<div class="glass tile wide"><div class="th"><span class="k">battery</span><i class="ti" id="batt-ic"></i></div><svg class="bchart" id="bchart" viewBox="0 0 360 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="bfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2bf08a" stop-opacity=".16"/><stop offset="1" stop-color="#2bf08a" stop-opacity="0"/></linearGradient></defs><path id="bchart-a" fill="url(#bfill)"/><path id="bchart-l"/></svg><div class="brow"><div class="v" id="batt">—</div><div class="s" id="batt-s"></div></div><div class="track"><i id="batt-i"></i></div></div>
+<div class="glass tile wide"><div class="th"><span class="k">battery</span><i class="ti" id="batt-ic"></i></div><svg class="bchart" id="bchart" viewBox="0 0 360 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="bfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2bf08a" stop-opacity=".16"/><stop offset="1" stop-color="#2bf08a" stop-opacity="0"/></linearGradient></defs><path id="bchart-a" fill="url(#bfill)"/><path id="bchart-l"/></svg><div class="brow"><div class="v" id="batt">—</div><div class="s" id="batt-s"></div></div><div class="track"><i id="batt-i"></i></div><p class="bnote" id="batt-n" hidden></p></div>
 <div class="grid">
   <div class="glass tile"><div class="th"><span class="k">ping</span><i class="ti" id="ping-ic"></i></div><div class="v" id="ping">—</div><svg class="scope" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline id="scope" points=""/></svg></div>
   <div class="glass tile"><div class="th"><span class="k">network</span><i class="ti" id="net-ic"></i></div><div class="v" id="net">—</div><div class="s" id="net-s"></div></div>
@@ -273,6 +277,7 @@ function render() {
   $('pupil').classList.toggle('spin', !!st.agentsBusy);           // the eye's pupil turns while an agent works
   $('eye').classList.toggle('asleep', a.label === 'Asleep');    // and shuts while the Mac sleeps
   if (!sleptAt) $('sleep-b').hidden = a.label === 'Asleep';     // already asleep: nothing to send
+  $('view-b').hidden = !st.desktop;                              // the desktop stream is on for this Mac
   $('state').textContent = a.label || (a.awake ? 'Awake' : 'Idle');
   $('state').className = 'state' + (a.label === 'Awake' ? ' live' : a.label === 'Idling' ? ' idle' : a.inUse ? ' use' : '');
   $('eye').classList.toggle('idling', a.label === 'Idling');
@@ -293,6 +298,7 @@ function render() {
   icon('batt-ic', b.state === 'charging' ? 'battery-charging' : low ? 'battery-warning' : b.pct >= 90 ? 'battery-full' : b.pct >= 65 ? 'battery-high' : b.pct >= 35 ? 'battery-medium' : b.pct >= 10 ? 'battery-low' : 'battery-empty',
     low ? 'red' : b.pluggedIn ? 'green' : 'on');
   $('batt-s').textContent = b.pluggedIn ? (b.state === 'charging' ? 'charging' : 'plugged in') : (b.remaining ? b.remaining + ' left' : 'on battery') + (b.drainPerHour != null ? ' · ' + b.drainPerHour + '%/h' : '');
+  $('batt-n').textContent = a.batteryNote || ''; $('batt-n').hidden = !a.batteryNote;
   // network
   const lit = { strong: 3, good: 2, weak: 1, poor: 0 }[n.signal] ?? (n.kind === 'hotspot' || n.kind === 'wired' ? 3 : 0);
   icon('net-ic', n.kind === 'offline' ? 'wifi-slash' : ['wifi-none', 'wifi-low', 'wifi-medium', 'wifi-high'][lit], n.kind === 'offline' ? 'red' : 'on');

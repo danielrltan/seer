@@ -115,6 +115,7 @@ export const BTN = {
   save: ic('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
   info: ic('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.2"/><circle cx="12" cy="7.9" r=".6" fill="currentColor"/>'),
   install: ic('<path d="M12 4v10.5M7.5 10 12 14.5 16.5 10M5 19.5h14"/>'),
+  screen: ic('<rect x="3" y="4.5" width="18" height="12" rx="2.2"/><path d="M9 20h6M12 16.5V20"/>'),
 };
 
 // The eye with a spinner for a pupil (eight spokes, fading behind the lead one).

@@ -76,9 +76,10 @@ export function decide(i) {
   const lowPower = !!(i.away && i.rule) && (lowPowerTrigger || lowPowerKeep);       // part of away mode, like disablesleep
 
   // Help lines: only ones the owner can act on, and only when true now.
+  // The battery's own line, shown in the battery card: at sleepBelow Seer lets go whatever wants it awake.
+  const batteryNote = b.onBattery && wants && floor ? `Under ${set.sleepBelow}%, it sleeps even with agents running. Plug it in`
+    : b.onBattery && running && b.pct <= set.sleepBelow + 5 ? `Sleeps at ${set.sleepBelow}% even with agents running` : '';
   const notes = [];
-  if (b.onBattery && wants && floor) notes.push(`Battery ${b.pct}%. Plug it in to keep it awake.`);
-  else if (b.onBattery && running && b.pct <= set.sleepBelow + 5) notes.push(`Battery ${b.pct}%. It sleeps at ${set.sleepBelow}% unless plugged in.`);
   const closingSleeps = running && i.lid === 'open' && !canClose;
   if (closingSleeps) notes.push(!i.rule ? 'Closing the lid will sleep it. Run seer away install on the Mac.'
     : !i.away ? 'Closing the lid will sleep it. Turn on Stay awake with the lid closed in Settings.'
@@ -91,7 +92,7 @@ export function decide(i) {
     screenOff: closed && !i.watching && !i.inUse && !!set.screenOff,
     freeze: headless && !!set.freeze, mute: headless && !!set.mute,
     failover: running && closed,                                             // never switch the Wi-Fi under someone
-    sleepHold: hold, closingSleeps, notes, windowUntil,
+    sleepHold: hold, closingSleeps, notes, batteryNote, windowUntil,
   };
 }
 

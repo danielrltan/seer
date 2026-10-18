@@ -109,7 +109,7 @@ check('closed lid on an external display, window: held', { lid: 'closed', extern
 check('lid open, window, Sleep now: nothing', { why: why.finished, holdOff: T + 30_000 },
   { running: false, caffeinate: false, disableSleep: false, windowUntil: 0, label: 'Idling' });
 check('lid open, window, below sleepBelow: nothing, and why', { why: why.finished, ...bat(12) },
-  { running: false, disableSleep: false, why: 'battery 12%', notes: ['Battery 12%. Plug it in to keep it awake.'] });
+  { running: false, disableSleep: false, why: 'battery 12%', notes: [], batteryNote: 'Under 15%, it sleeps even with agents running. Plug it in' });
 check('lid open, window on battery under lowPowerBelow: Low Power Mode as when working', { why: why.finished, ...bat(25) }, { running: true, lowPower: true });
 check('lid open, window on battery: not headless, so no Low Power Mode above lowPowerBelow', { why: why.finished, ...bat(80) }, { running: true, lowPower: false });
 check('after a lid-open sleep, a finish since then: the window holds', { why: why.finished, sleepHold: { at: T - MIN, lid: 'open' } },
@@ -152,13 +152,13 @@ check('external display, nothing', { lid: 'closed', external: true }, { running:
 
 // ---- battery ----
 check('below sleepBelow on battery: let it sleep, and say why', { lid: 'closed', why: why.busyClosed, ...bat(14) },
-  { running: false, label: 'Asleep', why: 'battery 14%', countdown: null, disableSleep: false, lowPower: false, notes: ['Battery 14%. Plug it in to keep it awake.'] });
+  { running: false, label: 'Asleep', why: 'battery 14%', countdown: null, disableSleep: false, lowPower: false, notes: [], batteryNote: 'Under 15%, it sleeps even with agents running. Plug it in' });
 check('below sleepBelow, stay timer: no countdown', { why: why.stay, ...bat(10) }, { running: false, countdown: null, label: 'Idling', why: 'battery 10%' });
 check('below sleepBelow, in use', { why: why.busy, inUse: true, ...bat(12) }, { running: false, label: 'In use' });
 check('below sleepBelow but plugged in', { lid: 'closed', why: why.busyClosed, battery: { onBattery: false, pct: 5 } }, { running: true });
-check('below sleepBelow, nothing wanted: no note', { ...bat(12) }, { notes: [], why: '' });
+check('below sleepBelow, nothing wanted: no note', { ...bat(12) }, { notes: [], why: '', batteryNote: '' });
 check('near the floor', { lid: 'closed', why: why.busyClosed, ...bat(18) },
-  { running: true, lowPower: true, notes: ['Battery 18%. It sleeps at 15% unless plugged in.'] });
+  { running: true, lowPower: true, notes: [], batteryNote: 'Sleeps at 15% even with agents running' });
 check('headless on battery: Low Power Mode at any charge', { lid: 'closed', why: why.finished, ...bat(80) }, { headless: true, lowPower: true });
 check('headless on battery, setting off', { lid: 'closed', why: why.finished, ...bat(80), set: { ...SET, headlessLowPower: false } }, { lowPower: false });
 check('working below lowPowerBelow', { why: why.busy, ...bat(29) }, { lowPower: true });

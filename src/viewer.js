@@ -52,11 +52,13 @@ body.short-vp #app{padding-bottom:10px}
   box-shadow:0 0 0 .5px rgba(255,255,255,.17),0 18px 44px rgba(0,0,0,.7)}
 #wrap{transform-origin:0 0}
 canvas{display:block}
-/* The Mac's pointer on a small filled green dot (behind the arrow, just below its tip) so it is easy to find on a small screen, and a ring that spreads where a
-   click lands. Drawn on the phone at the position the Mac reports; the Mac's own cursor is unchanged. */
-#halo{position:absolute;left:0;top:0;width:18px;height:18px;margin:-6px 0 0 -6px;border-radius:50%;pointer-events:none;z-index:2;opacity:0;
-  background:rgba(43,240,138,.45);box-shadow:0 0 0 1.5px rgba(43,240,138,.85),0 0 8px var(--glow);transition:opacity .35s}
-#halo.on{opacity:1}#halo.on.rest{opacity:.55}
+/* The Mac's pointer, drawn over as a green arrow with the Mac arrow's own angles (Figma-style): its tip is the
+   pointer's tip, so it covers the small real one exactly. A ring spreads where a click lands. Drawn on the phone at
+   the position the Mac reports; the Mac's own cursor is unchanged. */
+#halo{position:absolute;left:0;top:0;width:13px;height:20px;transform-origin:0 0;overflow:visible;pointer-events:none;z-index:2;opacity:0;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.45)) drop-shadow(0 0 5px var(--glow));transition:opacity .35s}
+#halo path{fill:var(--live);stroke:#fff;stroke-width:1.3;stroke-linejoin:round}
+#halo.on{opacity:1}#halo.on.rest{opacity:.7}
 .ripple{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;pointer-events:none;z-index:2;
   border:2.5px solid var(--live);box-shadow:0 0 10px var(--glow);animation:ripple .5s cubic-bezier(.2,.7,.3,1) forwards}
 .ripple.right{border-style:dashed}
@@ -127,7 +129,7 @@ canvas{display:block}
 }
 </style></head><body>
 <div id="app">
-<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="halo"></div><div id="msg" class="glass">Connecting</div></div>
+<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><svg id="halo" viewBox="0 0 13 20" aria-hidden="true"><path d="M0 0V16.2L3.9 12.6L6.6 18.9L9.3 17.8L6.7 11.7H12Z"/></svg><div id="msg" class="glass">Connecting</div></div>
 <div id="pad" class="glass"><i class="groove l" id="groove-l"></i><i class="groove r" id="groove-r"></i></div>
 <div id="foot">
 <div id="keys" class="glass">${KEYS.map(([k, l]) => `<button class="key" data-key="${k}" aria-label="${k}">${l}</button>`).join('')}</div>
@@ -337,8 +339,9 @@ function followPointer() {
 }
 $('unzoom').onclick = () => { zoom = 1; applyView(); };
 
-// The halo follows the pointer (on the stage, so it keeps its size when zoomed), dims after a moment at rest,
-// and hides when the pointer is out of sight. A click spreads a ring from where it lands.
+// The halo follows the pointer (on the stage, growing a little when zoomed so it still covers the real one), dims
+// a little after a moment at rest, and hides when the pointer is out of sight. A click spreads a ring from where it
+// lands.
 const CLICKS = ['down', 'click', 'press'];
 let haloAt = null, restTimer = 0;
 function halo() {
@@ -347,7 +350,7 @@ function halo() {
   const x = wrap.offsetLeft + p.px, y = wrap.offsetTop + p.py, inside = x >= 0 && y >= 0 && x <= stage.clientWidth && y <= stage.clientHeight;
   if (haloAt && Math.abs(haloAt.x - x) + Math.abs(haloAt.y - y) > 0.5) { el.classList.remove('rest'); clearTimeout(restTimer); restTimer = setTimeout(() => el.classList.add('rest'), 1800); }
   haloAt = { x, y };
-  el.style.left = x + 'px'; el.style.top = y + 'px'; el.classList.toggle('on', inside);
+  el.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + Math.sqrt(zoom) + ')'; el.classList.toggle('on', inside);
 }
 function ripple(right) {
   // A trackpad click has no position of its own: it lands where the halo is (the Mac reports it within 33 ms).

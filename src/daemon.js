@@ -94,9 +94,9 @@ export async function statusJson() {
   const awake = {
     awake: d.running, label: d.label, why: d.why, inUse: !!why.inUse, mode: d.mode, headless: d.headless,
     countdown: d.countdown, stayUntil: why.stayUntil || 0, reachableUntil: why.reachableUntil || 0,
-    external, closingSleeps: d.closingSleeps, pluggedIn: !lastBattery.onBattery,
+    external, closingSleeps: d.closingSleeps, pluggedIn: !lastBattery.onBattery, batteryNote: d.batteryNote || '',
   };
-  if (await darkWake()) Object.assign(awake, { awake: false, label: 'Asleep', why: '', countdown: null, inUse: false });
+  if (await darkWake()) Object.assign(awake, { awake: false, label: 'Asleep', why: '', countdown: null, inUse: false, batteryNote: '' });
   const st = await macStatus({ awake, agentsBusy: why.agentsBusy || 0, lid: lidState, notes: d.notes });
   return { ...st, device: await device(), agents: runningAgents(), projects: await projects(), desktop: !!loadConfig().desktop };
 }
