@@ -52,6 +52,7 @@ function connectHelper(log) {
   const s = net.connect(SOCK);
   helper = s;
   s.on('connect', () => { log('stream helper connected'); if (viewers.size) startCapture(); });
+  let lastStatus = { text: '', at: 0 };
   s.on('data', chunk => {
     helperBuf = Buffer.concat([helperBuf, chunk]);
     while (helperBuf.length >= 5) {
@@ -61,7 +62,12 @@ function connectHelper(log) {
       helperBuf = helperBuf.subarray(5 + len);
       const msg = Buffer.concat([frame.subarray(0, 1), frame.subarray(5)]);   // [type][payload] to the browser
       if (type === 1) lastConfig = msg;
-      if (type === 4) { const text = frame.subarray(5).toString(); log(`stream: ${text}`); for (const v of viewers) v.send(text); continue; }
+      if (type === 4) {                         // status; the same error again within 30 s is not news (one per tap otherwise)
+        const text = frame.subarray(5).toString();
+        if (text === lastStatus.text && Date.now() - lastStatus.at < 30_000) continue;
+        lastStatus = { text, at: Date.now() };
+        log(`stream: ${text}`); for (const v of viewers) v.send(text); continue;
+      }
       for (const v of viewers) {
         if (type === 1) { v.send(msg); continue; }
         if (v.bufferedAmount > MAX_BUFFERED) { v.needKey = true; requestKey(); continue; }   // behind: skip to the next keyframe

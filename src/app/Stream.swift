@@ -173,7 +173,9 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
             link.status(["capturing": true, "width": w, "height": h])
             logLine("capture started \(w)x\(h)")
         } catch {
-            link.status(["error": "capture failed: \(error.localizedDescription)"])
+            let tcc = error.localizedDescription.contains("TCC") || !CGPreflightScreenCaptureAccess()
+            link.status(["error": tcc ? "Seer needs Screen Recording to show the screen: on the Mac, System Settings > Privacy & Security > Screen & System Audio Recording, turn on Seer"
+                                      : "capture failed: \(error.localizedDescription)"])
             logLine("capture failed: \(error)")
         }
     }
@@ -367,7 +369,7 @@ func dispatch(_ j: [String: Any]) {
     case "stop": Task { await capture.stop() }
     case "keyframe": capture.keyframe()
     case "input":
-        if !AXIsProcessTrusted() { link.status(["error": "Accessibility not allowed for Seer Stream: System Settings > Privacy & Security > Accessibility"]); return }
+        if !AXIsProcessTrusted() { link.status(["error": "Seer needs Accessibility to take your taps and keys: on the Mac, System Settings > Privacy & Security > Accessibility, turn on Seer"]); return }
         DispatchQueue.main.async { Input.handle(j) }
     case "ping": link.status(["pong": true, "accessibility": AXIsProcessTrusted(), "capturing": capture.running])
     default: break
