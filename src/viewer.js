@@ -58,6 +58,8 @@ canvas{display:block}
 #halo{position:absolute;left:0;top:0;width:9px;height:11px;transform-origin:0 0;overflow:visible;pointer-events:none;z-index:2;opacity:0;
   filter:drop-shadow(0 1px 2px rgba(0,0,0,.45)) drop-shadow(0 0 5px var(--glow));transition:opacity .35s}
 #halo path{fill:var(--live);stroke:var(--live);stroke-width:1;stroke-linejoin:round}   /* the stroke only rounds the corners, all green */
+/* over text the Mac shows its I-beam: so does the halo, centred on the same point */
+#halo .ib{display:none;fill:none;stroke-width:2.4;stroke-linecap:round}#halo.text .ib{display:inline}#halo.text .ar{display:none}
 #halo.on{opacity:1}#halo.on.rest{opacity:.7}
 .ripple{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;pointer-events:none;z-index:2;
   border:2.5px solid var(--live);box-shadow:0 0 10px var(--glow);animation:ripple .5s cubic-bezier(.2,.7,.3,1) forwards}
@@ -129,7 +131,7 @@ canvas{display:block}
 }
 </style></head><body>
 <div id="app">
-<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><svg id="halo" viewBox="0 0 9 11" aria-hidden="true"><path d="M0 0V11L3 8.3H8.3Z"/></svg><div id="msg" class="glass">Connecting</div></div>
+<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><svg id="halo" viewBox="0 0 9 11" aria-hidden="true"><path class="ar" d="M0 0V11L3 8.3H8.3Z"/><path class="ib" d="M-3 -6.5h6M0 -6.5v13M-3 6.5h6"/></svg><div id="msg" class="glass">Connecting</div></div>
 <div id="pad" class="glass"><i class="groove l" id="groove-l"></i><i class="groove r" id="groove-r"></i></div>
 <div id="foot">
 <div id="keys" class="glass">${KEYS.map(([k, l]) => `<button class="key" data-key="${k}" aria-label="${k}">${l}</button>`).join('')}</div>
@@ -214,7 +216,7 @@ function connect() {
       if ('dock' in m && $('dock')) $('dock').classList.toggle('on', m.dock);
       if ('textFocus' in m) textFocus(m.textFocus, m.tapped !== false);
       if (typeof m.clip === 'string') pendingClip = m.clip;
-      if (m.cursor && typeof m.cursor.x === 'number' && typeof m.cursor.y === 'number') { cursor = m.cursor; followPointer(); halo(); }   // the Mac's pointer, as fractions of its screen
+      if (m.cursor && typeof m.cursor.x === 'number' && typeof m.cursor.y === 'number') { cursor = m.cursor; cursorKind = m.cursor.kind || 'arrow'; followPointer(); halo(); }   // the Mac's pointer, as fractions of its screen
       return;
     }
     const buf = new Uint8Array(ev.data), type = buf[0];
@@ -343,14 +345,14 @@ $('unzoom').onclick = () => { zoom = 1; applyView(); };
 // a little after a moment at rest, and hides when the pointer is out of sight. A click spreads a ring from where it
 // lands.
 const CLICKS = ['down', 'click', 'press'];
-let haloAt = null, restTimer = 0;
+let haloAt = null, restTimer = 0, cursorKind = 'arrow';   // the Mac's cursor: 'arrow' or 'text' (its I-beam)
 function halo() {
   const p = pointerOnView(), el = $('halo');
   if (!p) return;                                       // unknown for a moment after a nudge: the Mac reports it next
   const x = wrap.offsetLeft + p.px, y = wrap.offsetTop + p.py, inside = x >= 0 && y >= 0 && x <= stage.clientWidth && y <= stage.clientHeight;
   if (haloAt && Math.abs(haloAt.x - x) + Math.abs(haloAt.y - y) > 0.5) { el.classList.remove('rest'); clearTimeout(restTimer); restTimer = setTimeout(() => el.classList.add('rest'), 1800); }
   haloAt = { x, y };
-  el.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + Math.sqrt(zoom) + ')'; el.classList.toggle('on', inside);
+  el.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + Math.sqrt(zoom) + ')'; el.classList.toggle('on', inside); el.classList.toggle('text', cursorKind === 'text');
 }
 function ripple(right) {
   // A trackpad click has no position of its own: it lands where the halo is (the Mac reports it within 33 ms).

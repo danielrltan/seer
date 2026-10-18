@@ -301,6 +301,7 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var running = false
     private var cursorTimer: DispatchSourceTimer?
     private var lastCursor = CGPoint(x: -1, y: -1)
+    private var shape = "arrow", ticks = 0             // which cursor the Mac shows (see CursorShape)
     private var params: (Int, Int, Int, Bool)?
 
     // Start, stop and restart run one at a time, in the order asked. Run side by side (a viewer leaving as the next
@@ -437,25 +438,54 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     // Where the pointer is, as fractions of the captured display (the frames' space), so a zoomed-in viewer can
-    // follow it. Whatever moved it (the phone, a real mouse, an app), sampled 30 times a second while capturing and
-    // sent only when it moved; nothing while it is on another display.
+    // follow it, and which cursor shows (the viewer draws its own over it). Whatever moved it (the phone, a real
+    // mouse, an app), sampled 30 times a second while capturing and sent only when it moved; the shape is read 10
+    // times a second (on the main thread, as AppKit wants) and sent when it changes. Nothing while it is on
+    // another display.
     private func watchCursor(_ id: CGDirectDisplayID) {
         stopCursor()
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now(), repeating: 1.0 / 30, leeway: .milliseconds(5))
         t.setEventHandler { [weak self] in
-            guard let self, let p = CGEvent(source: nil)?.location, p != self.lastCursor else { return }
+            guard let self, let p = CGEvent(source: nil)?.location else { return }
+            self.ticks += 1
+            if self.ticks % 3 == 0 {
+                DispatchQueue.main.async {
+                    let k = CursorShape.read()
+                    self.queue.async { if k != self.shape { self.shape = k; self.lastCursor = CGPoint(x: -1, y: -1) } }
+                }
+            }
+            guard p != self.lastCursor else { return }
             let b = CGDisplayBounds(id)
             guard b.contains(p) else { return }
             self.lastCursor = p
             let f = { (v: CGFloat) in (Double(v) * 100_000).rounded() / 100_000 }
-            link.status(["cursor": ["x": f((p.x - b.minX) / b.width), "y": f((p.y - b.minY) / b.height)]])
+            link.status(["cursor": ["x": f((p.x - b.minX) / b.width), "y": f((p.y - b.minY) / b.height), "kind": self.shape]])
         }
         t.resume(); cursorTimer = t
     }
     private func stopCursor() { cursorTimer?.cancel(); cursorTimer = nil; lastCursor = CGPoint(x: -1, y: -1) }
 }
 let capture = Capture()
+
+// ---------- which cursor ----------
+// The Mac's cursor as the viewer draws it: "text" for the I-beam (over text that can be selected), else "arrow".
+// Told apart by the image's size and hot spot, which is cheap: AppKit's own I-beam, or any cursor that is tall and
+// narrow with its hot spot in the middle (the classic 9x18 I-beam the system reports). Each change is logged with
+// its size, so a shape it gets wrong can be found in app.log.
+enum CursorShape {
+    static let ibeam = (NSCursor.iBeam.hotSpot, NSCursor.iBeam.image.size)
+    static var last = ""
+    static func read() -> String {
+        guard let c = NSCursor.currentSystem else { return "arrow" }
+        let h = c.hotSpot, s = c.image.size
+        let centred = abs(h.x - s.width / 2) <= 2 && abs(h.y - s.height / 2) <= 2
+        let k = (h == ibeam.0 && s == ibeam.1) || (centred && s.height >= 1.6 * s.width) ? "text" : "arrow"
+        let sig = "\(k) \(Int(s.width))x\(Int(s.height)) at \(Int(h.x)),\(Int(h.y))"
+        if sig != last { last = sig; logLine("cursor: \(sig)") }
+        return k
+    }
+}
 
 // ---------- what has focus ----------
 // After a click or Tab, is a text field focused on the Mac, and did the click land on it? The viewer brings up
