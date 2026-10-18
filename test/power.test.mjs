@@ -12,8 +12,8 @@ const WHY = { awake: false, why: '', agentsBusy: 0, agentsWaiting: 0, reachableU
 // What awakeReason() returns in each situation (activity.js: a busy agent or a viewer refreshes the window).
 const why = {
   none: WHY,
-  busy: { ...WHY, awake: true, why: '1 agent working', agentsBusy: 1 },
-  busyClosed: { ...WHY, awake: true, why: '1 agent working', agentsBusy: 1, reachableUntil: T + 15 * MIN },
+  busy: { ...WHY, awake: true, why: '1 agent active', agentsBusy: 1 },
+  busyClosed: { ...WHY, awake: true, why: '1 agent active', agentsBusy: 1, reachableUntil: T + 15 * MIN },
   finished: { ...WHY, awake: true, why: 'agent finished', reachableUntil: T + 9 * MIN },
   waiting: { ...WHY, awake: true, why: 'an agent needs you', agentsWaiting: 1, reachableUntil: T + 12 * MIN },
   streaming: { ...WHY, awake: true, why: 'streaming', reachableUntil: T + 15 * MIN },
@@ -64,7 +64,7 @@ function invariants(name, over, d) {
 check('lid open, nothing', {}, { running: false, label: 'Idle', why: '', countdown: null, disableSleep: false, notes: [] });
 check('lid open, someone at it', { inUse: true }, { running: false, label: 'In use', caffeinate: false });
 check('lid open, agent working: sleep disabled before the lid closes', { why: why.busy },
-  { running: true, label: 'Awake', why: '1 agent working', disableSleep: true, countdown: null, headless: false, screenOff: false, notes: [] });
+  { running: true, label: 'Awake', why: '1 agent active', disableSleep: true, countdown: null, headless: false, screenOff: false, notes: [] });
 check('lid open, agent working, someone at it', { why: why.busy, inUse: true }, { running: true, label: 'Awake', headless: false });
 check('lid open, streaming', { why: why.streamingOpen }, { running: true, label: 'Awake', countdown: null });
 check('lid open, stay timer', { why: why.stay }, { running: true, countdown: { until: T + 40 * MIN, kind: 'stay' }, disableSleep: true });
@@ -80,7 +80,7 @@ check('lid unknown (desktop Mac), agent working', { lid: 'unknown', why: why.bus
 
 // ---- lid closed ----
 check('THE BUG: lid closed while an agent works: awake, no sleep countdown', { lid: 'closed', why: why.busyClosed },
-  { running: true, label: 'Awake', why: '1 agent working', countdown: null, headless: false, disableSleep: true, screenOff: true, freeze: false, mute: false });
+  { running: true, label: 'Awake', why: '1 agent active', countdown: null, headless: false, disableSleep: true, screenOff: true, freeze: false, mute: false });
 check('lid closed, agent finished: headless, counting down', { lid: 'closed', why: why.finished },
   { running: true, label: 'Headless', countdown: { until: T + 9 * MIN, kind: 'sleep', from: T - 6 * MIN }, freeze: true, mute: true, lowPower: false, failover: true });
 check('lid closed, agent waiting on the owner: the window still ends', { lid: 'closed', why: why.waiting },
@@ -171,7 +171,7 @@ const w = onWake({ sleptAt: T - 3 * 3600_000, lid: 'closed' });
 assert.equal(run({ lid: 'closed', why: why.busyClosed, sleepHold: w.sleepHold }).running, false, 'dark wake after 3 h: not grabbed');
 
 // ---- the page's own script compiles, and renders the server's countdown only ----
-const sample = { awake: { awake: true, label: 'Awake', why: '1 agent working', countdown: null, stayUntil: 0, reachableUntil: T + 15 * MIN, inUse: false },
+const sample = { awake: { awake: true, label: 'Awake', why: '1 agent active', countdown: null, stayUntil: 0, reachableUntil: T + 15 * MIN, inUse: false },
   agentsBusy: 1, battery: { pct: 80, pluggedIn: true }, network: { kind: 'wifi' }, hotspot: {}, lid: 'closed', help: [], agents: [], projects: [] };
 const html = homePage(JSON.stringify(sample), '');
 const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));

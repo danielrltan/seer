@@ -117,7 +117,7 @@ export function awakeReason({ watching, lidClosed, inUse }) {
   const clock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const why = stayUntil ? `until ${clock(stayUntil)}`
     : watching ? 'streaming'
-    : a.busy ? `${a.busy} agent${a.busy > 1 ? 's' : ''} working`
+    : a.busy ? `${a.busy} agent${a.busy > 1 ? 's' : ''} active`
     : lidClosed && now < until ? (a.waiting ? 'an agent needs you' : agentAt >= lastSeen ? 'agent finished' : 'you checked in')
     : null;
   return { awake: !!why, why: why || '', inUse: !!inUse, agentsBusy: a.busy, agentsWaiting: a.waiting, reachableUntil: lidClosed && last ? until : 0, stayUntil };

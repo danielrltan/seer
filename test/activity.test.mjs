@@ -65,7 +65,7 @@ test('background work after Stop: hook idle, sessions busy -> working, no countd
   session({ pid: live(), id, status: 'busy', since: now - 20 * MIN });
   mark(id, 'idle', now - 19 * MIN);
   const r = await reason();
-  assert.equal(r.why, '1 agent working'); assert.equal(r.awake, true); assert.equal(r.agentsBusy, 1);
+  assert.equal(r.why, '1 agent active'); assert.equal(r.awake, true); assert.equal(r.agentsBusy, 1);
   near(r.reachableUntil, now + 15 * MIN, 'window held open at now while working');
 });
 
@@ -73,7 +73,7 @@ test('background shell after Stop (status shell) -> working', async () => {
   reset(); const now = Date.now(), id = sid();
   session({ pid: live(), id, status: 'shell', since: now - 30 * MIN });
   mark(id, 'idle', now - 30 * MIN);
-  assert.equal((await reason()).why, '1 agent working');
+  assert.equal((await reason()).why, '1 agent active');
 });
 
 test('all idle -> countdown from the real finish (status went idle), not the Stop hook', async () => {
@@ -115,7 +115,7 @@ test('pid reused (procStart differs) -> not working, even with a fresh hook busy
   mark(id, 'busy', now - 30_000);
   const r = await reason();
   assert.equal(r.agentsBusy, 0);
-  assert.notEqual(r.why, '1 agent working');
+  assert.notEqual(r.why, '1 agent active');
 });
 
 test('waiting on a prompt -> "an agent needs you" for the window from when it began waiting, never holding longer', async () => {
@@ -136,14 +136,14 @@ test('waiting on a prompt while its background subagents keep writing -> still w
   session({ pid: live(), id, status: 'waiting', since: now - 30 * MIN });
   wrote(id, 'subagents/agent-a1.jsonl', now - MIN);
   const r = await reason();
-  assert.equal(r.why, '1 agent working'); assert.equal(r.agentsWaiting, 1);
+  assert.equal(r.why, '1 agent active'); assert.equal(r.agentsWaiting, 1);
 });
 
 test('long busy stretch: working while anything is written, stuck after an hour of silence, capped at 12 h', async () => {
   reset(); let now = Date.now(), id = sid();
   session({ pid: live(), id, status: 'busy', since: now - 3 * H });
   wrote(id, 'subagents/workflows/wf_1/agent-a2.jsonl', now - 5 * MIN);
-  assert.equal((await reason()).why, '1 agent working');
+  assert.equal((await reason()).why, '1 agent active');
   reset(); id = sid();
   session({ pid: live(), id, status: 'busy', since: now - 3 * H });
   wrote(id, 'main', now - 2 * H);
@@ -178,13 +178,13 @@ test('a session kept open for days (hundreds of old transcripts) still shows its
       fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'bx.output'), 'building\n');
     } else wrote(id, 'subagents/workflows/wf_zz_late/agent-new.jsonl', now - 2 * MIN);
   }
-  assert.equal((await reason()).why, '2 agents working');
+  assert.equal((await reason()).why, '2 agents active');
 });
 
 test('a live sessions file with no session id counts by its status', async () => {
   reset(); const now = Date.now();
   session({ pid: live(), id: null, status: 'busy', since: now - 5 * MIN });
-  assert.equal((await reason()).why, '1 agent working');
+  assert.equal((await reason()).why, '1 agent active');
 });
 
 test('hook busy newer than an idle sessions file: fast path for 2 minutes, then the file decides', async () => {
@@ -208,7 +208,7 @@ test('two files for one session: dead busy one and live idle one -> idle', async
 test('hook-only sessions (no sessions file): busy, idle, stale, written-to, capped', async () => {
   const now = Date.now();
   reset(); mark(sid(), 'busy', now - 10 * MIN);
-  assert.equal((await reason()).why, '1 agent working');
+  assert.equal((await reason()).why, '1 agent active');
   reset(); mark(sid(), 'busy', now - 2 * H);
   assert.equal((await reason()).awake, false);
   reset(); let id = sid(); mark(id, 'busy', now - 2 * H, { transcript: wrote(id, 'main', now - 2 * MIN) });
@@ -265,7 +265,7 @@ test('several sessions mixed: two working, one waiting, one idle, one dead', asy
   session({ pid: live(), id: sid(), status: 'idle', since: now - MIN });
   session({ pid: await deadPid(), id: sid(), status: 'busy', since: now - MIN, procStart: 'x' });
   const r = await reason();
-  assert.equal(r.why, '2 agents working'); assert.equal(r.agentsBusy, 2); assert.equal(r.agentsWaiting, 1);
+  assert.equal(r.why, '2 agents active'); assert.equal(r.agentsBusy, 2); assert.equal(r.agentsWaiting, 1);
   const { runningAgents } = await import('../src/agents.js');
   const list = runningAgents();
   assert.equal(list.length, 4);
@@ -280,7 +280,7 @@ test('lid open: the window does not apply; working still holds; inUse passes thr
   assert.equal(r.awake, false); assert.equal(r.inUse, true); assert.equal(r.reachableUntil, 0);
   session({ pid: live(), id: sid(), status: 'busy', since: now - MIN });
   r = await reason({ lidClosed: false });
-  assert.equal(r.why, '1 agent working'); assert.equal(r.inUse, false);
+  assert.equal(r.why, '1 agent active'); assert.equal(r.inUse, false);
 });
 
 test('the rest of the order: stay awake > streaming > working; you checked in', async () => {
