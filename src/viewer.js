@@ -52,12 +52,12 @@ body.short-vp #app{padding-bottom:10px}
   box-shadow:0 0 0 .5px rgba(255,255,255,.17),0 18px 44px rgba(0,0,0,.7)}
 #wrap{transform-origin:0 0}
 canvas{display:block}
-/* The Mac's pointer, drawn over as a green arrow with the Mac arrow's own angles (Figma-style): its tip is the
+/* The Mac's pointer, drawn over as a solid green arrow with the Mac arrow's own angles (Figma-style): its tip is the
    pointer's tip, so it covers the small real one exactly. A ring spreads where a click lands. Drawn on the phone at
    the position the Mac reports; the Mac's own cursor is unchanged. */
 #halo{position:absolute;left:0;top:0;width:13px;height:20px;transform-origin:0 0;overflow:visible;pointer-events:none;z-index:2;opacity:0;
   filter:drop-shadow(0 1px 2px rgba(0,0,0,.45)) drop-shadow(0 0 5px var(--glow));transition:opacity .35s}
-#halo path{fill:var(--live);stroke:#fff;stroke-width:1.3;stroke-linejoin:round}
+#halo path{fill:var(--live);stroke:var(--live);stroke-width:1.3;stroke-linejoin:round}   /* the stroke only rounds and fills out the shape, all green
 #halo.on{opacity:1}#halo.on.rest{opacity:.7}
 .ripple{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;pointer-events:none;z-index:2;
   border:2.5px solid var(--live);box-shadow:0 0 10px var(--glow);animation:ripple .5s cubic-bezier(.2,.7,.3,1) forwards}
