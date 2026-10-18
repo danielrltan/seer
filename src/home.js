@@ -32,9 +32,16 @@ ${appHead}
 .green{color:var(--live)!important;text-shadow:0 0 18px var(--glow)}.amber{color:var(--amber)!important}.red{color:var(--red)!important}
 svg.scope{width:100%;height:28px;margin-top:10px;overflow:visible}
 svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;filter:drop-shadow(0 0 4px var(--glow))}
-.icon{display:flex;align-items:center;gap:10px;margin-top:10px}.icon .v{margin-top:0}
-.wifi path{fill:none;stroke:rgba(255,255,255,.18);stroke-width:2.4;stroke-linecap:round}.wifi path.on{stroke:#fff}.wifi circle{fill:#fff}
-.lap path{fill:none;stroke:#fff;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
+/* each tile: its label, and on the right a live icon of the same thing (battery level, signal, lid) */
+.th{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ti{flex:none;width:30px;height:20px;fill:none;stroke:var(--ink2);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;overflow:visible;transition:stroke .3s,color .3s}
+#batt-ic .fill{fill:currentColor;stroke:none;color:#fff;transition:width .4s}
+#batt-ic.green .fill{color:var(--live)}#batt-ic.red .fill{color:var(--red)}#batt-ic.red{stroke:var(--red)}
+#batt-ic .bolt{fill:#fff;stroke:#0b100e;stroke-width:1.3;display:none}#batt-ic.charging .bolt{display:block}
+#ping-ic.green{stroke:var(--live);filter:drop-shadow(0 0 4px var(--glow))}#ping-ic.amber{stroke:var(--amber)}#ping-ic.red{stroke:var(--red)}
+.wifi path{stroke:rgba(255,255,255,.2)}.wifi path.on{stroke:#fff}.wifi circle{fill:#fff;stroke:none}
+.wifi .x{display:none;stroke:var(--red)}.wifi.off .x{display:block}.wifi.off circle{fill:rgba(255,255,255,.2)}
+.lap{stroke:#fff}
 .stay{padding:16px 18px 16px;border-radius:26px;margin-bottom:12px}
 .stay .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .stay .amt{font:700 24px/1 var(--round)}
@@ -144,10 +151,10 @@ ${BACKDROP}
 <div id="help"></div>
 
 <div class="grid">
-  <div class="glass tile"><span class="k">battery</span><div class="v" id="batt">—</div><div class="track" style="flex:none;margin-top:12px"><i id="batt-i"></i></div><div class="s" id="batt-s"></div></div>
-  <div class="glass tile"><span class="k">ping</span><div class="v" id="ping">—</div><svg class="scope" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline id="scope" points=""/></svg></div>
-  <div class="glass tile"><span class="k">network</span><div class="icon"><svg class="wifi" width="26" height="21" viewBox="0 0 30 24" aria-hidden="true"><path id="r3" d="M3 11a17 17 0 0 1 24 0"/><path id="r2" d="M7.5 15.5a10.6 10.6 0 0 1 15 0"/><path id="r1" d="M11.5 19.5a5 5 0 0 1 7 0"/><circle cx="15" cy="22" r="1.7"/></svg><div class="v" id="net">—</div></div><div class="s" id="net-s"></div></div>
-  <div class="glass tile"><span class="k">lid</span><div class="icon"><svg class="lap" width="32" height="22" viewBox="0 0 36 24" aria-hidden="true"><path id="lap-screen" d="M7 3h22v14H7z"/><path d="M2 20h32l-2 2H4z"/></svg><div class="v" id="lid">—</div></div><div class="s" id="lid-s"></div></div>
+  <div class="glass tile"><div class="th"><span class="k">battery</span><svg class="ti" id="batt-ic" viewBox="0 0 30 20" aria-hidden="true"><rect x="1.5" y="3.5" width="23.5" height="13" rx="4"/><path d="M28 8.2v3.6"/><rect class="fill" id="batt-f" x="4" y="6" width="0" height="8" rx="2"/><path class="bolt" id="batt-bolt" d="M14.6 4.2 9.6 11h4.2l-1.6 4.8 5.2-7h-4.3Z"/></svg></div><div class="v" id="batt">—</div><div class="track" style="flex:none;margin-top:12px"><i id="batt-i"></i></div><div class="s" id="batt-s"></div></div>
+  <div class="glass tile"><div class="th"><span class="k">ping</span><svg class="ti" id="ping-ic" viewBox="0 0 30 20" aria-hidden="true"><path d="M1.5 10.5h5.5l3-7 4.6 13.5 3.6-10 2.1 3.5h8.2"/></svg></div><div class="v" id="ping">—</div><svg class="scope" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline id="scope" points=""/></svg></div>
+  <div class="glass tile"><div class="th"><span class="k">network</span><svg class="ti wifi" viewBox="0 0 30 20" aria-hidden="true"><path id="r3" d="M2.5 7.6a17.6 17.6 0 0 1 25 0"/><path id="r2" d="M7 12.1a11.2 11.2 0 0 1 16 0"/><path id="r1" d="M11.4 16.3a5.1 5.1 0 0 1 7.2 0"/><circle cx="15" cy="18.4" r="1.6"/><path class="x" id="wifi-x" d="M4.5 1.5l21 17"/></svg></div><div class="v" id="net">—</div><div class="s" id="net-s"></div></div>
+  <div class="glass tile"><div class="th"><span class="k">lid</span><svg class="ti lap" viewBox="0 0 30 20" aria-hidden="true"><path id="lap-screen" d="M5.5 2.5h19a1.5 1.5 0 0 1 1.5 1.5v10.5H4V4a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M1.5 16.8h27"/></svg></div><div class="v" id="lid">—</div><div class="s" id="lid-s"></div></div>
 </div>
 
 <section class="glass stay">
@@ -220,10 +227,13 @@ function render() {
   const low = !b.pluggedIn && b.pct <= 20;
   $('batt').textContent = b.pct + '%'; $('batt').className = 'v ' + (low ? 'red' : b.pluggedIn ? 'green' : '');
   $('batt-i').style.width = b.pct + '%'; $('batt-i').className = low ? 'red' : '';
+  $('batt-f').setAttribute('width', (Math.max(0, Math.min(100, b.pct)) / 100 * 18.5).toFixed(1));
+  $('batt-ic').setAttribute('class', 'ti' + (low ? ' red' : b.pluggedIn ? ' green' : '') + (b.state === 'charging' ? ' charging' : ''));
   $('batt-s').textContent = b.pluggedIn ? (b.state === 'charging' ? 'charging' : 'plugged in') : (b.remaining ? b.remaining + ' left' : 'on battery') + (b.drainPerHour != null ? ' · ' + b.drainPerHour + '%/h' : '');
   // network
   const lit = { strong: 3, good: 2, weak: 1, poor: 0 }[n.signal] ?? (n.kind === 'hotspot' || n.kind === 'wired' ? 3 : 0);
   ['r1', 'r2', 'r3'].forEach((r, i) => $(r).classList.toggle('on', n.kind !== 'offline' && i < lit));
+  document.querySelector('.wifi').classList.toggle('off', n.kind === 'offline');
   $('net').textContent = { wifi: 'Wi-Fi', hotspot: 'Hotspot', wired: 'Wired', offline: 'Offline' }[n.kind] || n.kind;
   $('net').className = 'v ' + (n.kind === 'offline' ? 'red' : n.kind === 'hotspot' ? 'amber' : '');
   $('net-s').textContent = n.kind === 'offline'
@@ -231,7 +241,7 @@ function render() {
     : [n.kind === 'hotspot' ? h.name : n.ssid, n.internetMs != null ? n.internetMs + ' ms' : ''].filter(Boolean).join(' · ');
   // lid
   $('lid').textContent = st.lid === 'unknown' ? '—' : st.lid === 'closed' ? 'Closed' : 'Open';
-  $('lap-screen').setAttribute('d', st.lid === 'closed' ? 'M4 18.5h28' : 'M7 3h22v14H7z');
+  $('lap-screen').setAttribute('d', st.lid === 'closed' ? 'M3.5 14.2h23' : 'M5.5 2.5h19a1.5 1.5 0 0 1 1.5 1.5v10.5H4V4a1.5 1.5 0 0 1 1.5-1.5Z');
   $('lid-s').textContent = st.lid === 'closed' && (a.external || a.inUse) ? 'external display' : '';
   // stay awake
   $('stay-x').hidden = !a.stayUntil;
@@ -274,7 +284,8 @@ async function refresh() {
     const t0 = performance.now();
     await fetch('/ping', { cache: 'no-store' });
     const ms = Math.round(performance.now() - t0);
-    $('ping').innerHTML = ms + '<small> ms</small>'; $('ping').className = 'v ' + (ms < 120 ? 'green' : ms < 300 ? 'amber' : 'red');
+    const q = ms < 120 ? 'green' : ms < 300 ? 'amber' : 'red';
+    $('ping').innerHTML = ms + '<small> ms</small>'; $('ping').className = 'v ' + q; $('ping-ic').setAttribute('class', 'ti ' + q);
     $('link').textContent = 'linked'; $('link-pip').className = 'pip on';
     scope(ms);
     const next = await (await fetch('/status.json', { cache: 'no-store' })).json();
@@ -284,7 +295,7 @@ async function refresh() {
     if (sleptAt) { sleptAt = 0; const b = $('sleep-b'); b.disabled = false; b.lastChild.textContent = 'Sleep now'; }
     st = next;
     render();
-  } catch { $('link').textContent = 'lost'; $('link-pip').className = 'pip red'; $('ping').textContent = '—'; }
+  } catch { $('link').textContent = 'lost'; $('link-pip').className = 'pip red'; $('ping').textContent = '—'; $('ping-ic').setAttribute('class', 'ti'); }
 }
 
 // stay awake: 10 min to 12 h, finer at the short end
