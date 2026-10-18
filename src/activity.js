@@ -56,7 +56,9 @@ export function awakeReason({ watching, lidClosed, inUse }) {
   const a = agents();
   if (!set.agentsKeepAwake) { a.busy = 0; a.waiting = 0; a.lastAt = 0; }       // the owner turned agents off as a reason
   if (a.busy) lastSeen = Math.max(lastSeen, now);
-  const last = Math.max(lastSeen, a.lastAt), until = last + reachableMs;
+  let last = Math.max(lastSeen, a.lastAt);
+  if (last <= (cfg.sleptAt || 0)) last = 0;                   // "Sleep now" ended the window: only newer activity counts
+  const until = last + reachableMs;
   const stayUntil = cfg.stayAwakeUntil > now ? cfg.stayAwakeUntil : 0;
   const clock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const why = stayUntil ? `staying awake until ${clock(stayUntil)}`

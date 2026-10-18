@@ -3,7 +3,7 @@
 // caffeinate cannot stop sleep when the lid is closed on battery: the Mac must stay open, or plugged in.
 import fs from 'node:fs';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { list } from './core.js';
 import { tail } from './devserver.js';
 import { cleanName, loadConfig, saveConfig } from './store.js';
@@ -219,6 +219,17 @@ const server = http.createServer(async (req, res) => {
       log(minutes ? `stay awake: ${minutes} min, from the menu bar` : 'stay awake: cancelled from the menu bar');
       await tick(); res.writeHead(204); return res.end();
     }
+    // Sleep now: from the phone (sign-in and Seer's origin, like stay awake) or Seer.app's menu (this Mac only).
+    const sleepPhone = url.pathname === '/sleep' && req.method === 'POST';
+    const sleepMenu = url.pathname === '/local/sleep' && req.method === 'POST' && !req.headers['cf-connecting-ip'] && req.socket.remoteAddress === '127.0.0.1' && !req.headers.origin;
+    if (sleepPhone || sleepMenu) {
+      const cfg = loadConfig();
+      if (sleepPhone && (req.headers.origin !== `https://seer.${cfg.zone}` || !(await verifyAccess(req.headers['cf-access-jwt-assertion'], cfg).catch(() => null)))) {
+        res.writeHead(403, { 'content-type': 'application/json' }); return res.end('{"error":"sign in first"}');
+      }
+      res.writeHead(204); res.end();                         // answer first: the Mac is about to go
+      return sleepNow(sleepPhone ? 'from the phone' : 'from the menu bar');
+    }
     if (url.pathname === '/kick' && req.method === 'POST' && !req.headers['cf-connecting-ip'] && req.socket.remoteAddress === '127.0.0.1') {
       tick(); res.writeHead(204); return res.end();
     }
@@ -266,9 +277,22 @@ server.on('upgrade', async (req, socket, head) => {
 // Hold the Mac awake while something needs it (activity.js: plugged in, an agent working, someone watching, or
 // the reachable window after those) and let it sleep otherwise. caffeinate covers an open lid; away mode
 // (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
+let holdOff = 0;                                       // after Sleep now: hold nothing for a minute, whatever comes in
 let awake = null, running = false, windowSince = 0, why = { awake: false, why: 'starting' }, lidState = 'unknown', headless = false, netTick = 0, lastLid = 'unknown', lastDark = 0, ticking = false;
 const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
 const checkNetwork = failover(log);
+// Sleep now: skip the reachable window and any stay-awake timer, put everything Seer did back (apps thawed, sound
+// on, sleep allowed again, Low Power Mode as it was), then sleep the Mac as the Apple menu's Sleep does.
+async function sleepNow(source) {
+  log(`sleep now, asked ${source}`);
+  saveConfig({ stayAwakeUntil: 0, sleptAt: Date.now() });
+  holdOff = Date.now() + 60_000;
+  awake?.kill(); awake = null; running = false;
+  await thawAll(log).catch(() => {});
+  await unmuteOutput().catch(() => {});
+  await release().catch(e => log(`sleep now: ${e.message}`));
+  setTimeout(() => execFile('/usr/bin/pmset', ['sleepnow'], err => err && log(`sleep now: pmset ${err.message}`)), 1500);
+}
 async function tick() {
   if (ticking) return; ticking = true;
   try { await tickOnce(); } finally { ticking = false; }
@@ -280,7 +304,7 @@ async function tickOnce() {
   lidState = await lid().catch(() => 'unknown');
   const idle = await idleSeconds().catch(() => null), inUse = idle !== null && idle < 120;
   why = awakeReason({ watching, lidClosed: lidState === 'closed', inUse });
-  running = why.awake;
+  running = why.awake && Date.now() > holdOff;
   // Headless: lid closed, nobody streaming or at it, no agent working. The Mac only waits, so it saves all it can.
   headless = running && lidState === 'closed' && !watching && !inUse && !why.agentsBusy;
   // Headless actions: screen off on closing; heavy apps frozen while it waits, thawed for an agent, a viewer or

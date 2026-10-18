@@ -60,7 +60,13 @@ enum Bundled {
     static let resources = Bundle.main.resourceURL!.path
     static let node = resources + "/bin/node"
     static let cloudflared = resources + "/bin/cloudflared"
-    static let seerJs = resources + "/seer/bin/seer.js"
+    // Seer's own code runs from ~/.seer/code (scripts/deploy-code.sh puts it there), outside the signed bundle, so
+    // changing it leaves the app, and the Screen Recording and Accessibility it was given, as they are. A Mac that
+    // has never had it deployed runs the copy inside the app.
+    static var seerJs: String {
+        let deployed = seerHome.appendingPathComponent("code/bin/seer.js").path
+        return FileManager.default.fileExists(atPath: deployed) ? deployed : resources + "/seer/bin/seer.js"
+    }
     static let me = Bundle.main.executablePath!
 
     // What the children see: Seer's home, the app (for its Wi-Fi subcommand), and the bundled tools first on PATH.

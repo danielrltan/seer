@@ -16,6 +16,8 @@ ${appHead}
 .state.use{color:#fff}
 .why{font-size:15px;color:var(--ink2)}
 .count{display:flex;align-items:center;gap:12px;margin-top:16px}
+.sleep-row{display:flex;justify-content:flex-end;margin-top:16px}
+#sleep-b.armed{background:rgba(255,90,95,.2);color:#ffd9da;box-shadow:inset 0 1px 0 rgba(255,200,200,.25),0 0 0 .5px rgba(255,90,95,.6)}
 .count .t{font:700 20px/1 var(--round);font-variant-numeric:tabular-nums;min-width:70px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .tile{padding:14px 16px 13px;border-radius:24px;min-height:128px;display:flex;flex-direction:column}
@@ -57,6 +59,7 @@ ${BACKDROP}
   <div class="state" id="state">—</div>
   <div class="why" id="why"></div>
   <div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div>
+  <div class="sleep-row"><button class="btn" id="sleep-b">Sleep now</button></div>
 </section>
 
 <div id="help"></div>
@@ -168,9 +171,26 @@ async function setStay(minutes) {
 $('stay-b').onclick = () => setStay(STEPS[$('stay-r').value]);
 $('stay-x').onclick = () => setStay(0);
 
+// Sleep now: a sleeping Mac cannot be woken from here, so the first tap arms it and a second within 3 s sends it.
+let armed = 0;
+$('sleep-b').onclick = async () => {
+  const b = $('sleep-b');
+  if (Date.now() > armed) {
+    armed = Date.now() + 3000; b.textContent = 'Tap again to sleep'; b.classList.add('armed');
+    setTimeout(() => { if (Date.now() > armed) { b.textContent = 'Sleep now'; b.classList.remove('armed'); } }, 3100);
+    return;
+  }
+  armed = 0; b.classList.remove('armed'); b.disabled = true; b.textContent = 'Going to sleep';
+  try {
+    const r = await fetch('/sleep', { method: 'POST' });
+    if (!r.ok) throw new Error();
+    $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'asleep since ' + clockOf(Date.now()); $('count').hidden = true;
+  } catch { b.disabled = false; b.textContent = 'Sleep now'; }
+};
+
 render(); refresh();
 setInterval(tick, 1000);
-setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+setInterval(() => { if (!document.hidden && !$('sleep-b').disabled) refresh(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 </script></body></html>`;
 }

@@ -4,8 +4,7 @@
 #   Contents/Resources/bin/node      the Node runtime (Apple-silicon slice only)
 #   Contents/Resources/bin/cloudflared
 #   Contents/Resources/seer/         Seer's own code (bin, src, assets, node_modules)
-# Signed ad hoc until there is a Developer ID: a rebuild then asks for Screen Recording and Accessibility again.
-# Usage: scripts/build-app.sh [--install]   (--install replaces /Applications/Seer.app)
+# Usage: scripts/build-app.sh [--install]   (--install replaces /Applications/Seer.app and deploys the code)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT="build/Seer.app"
@@ -47,6 +46,9 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 
+# Signed ad hoc. (An Apple Development signature gets the app flagged as malware and trashed by Gatekeeper.) macOS
+# ties Screen Recording and Accessibility to this exact build, so a rebuild asks for both again: rebuild only when
+# the Swift app, node or cloudflared change. Seer's own code changes go out with scripts/deploy-code.sh instead.
 codesign --force --deep --sign - "$OUT"
 xattr -cr "$OUT"
 echo "built $OUT ($(du -sh "$OUT" | cut -f1))"
@@ -58,4 +60,5 @@ if [ "${1:-}" = "--install" ]; then
   cp -R "$OUT" /Applications/Seer.app
   xattr -cr /Applications/Seer.app
   echo "installed /Applications/Seer.app"
+  "$(dirname "$0")/deploy-code.sh" --no-restart
 fi

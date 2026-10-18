@@ -136,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let m = NSMenuItem(title: "Cancel", action: #selector(stayAwake(_:)), keyEquivalent: ""); m.tag = 0; m.target = self; sub.addItem(m)
         }
         stay.submenu = sub; menu.addItem(stay)
+        let sleep = NSMenuItem(title: "Sleep now", action: #selector(sleepNow), keyEquivalent: ""); sleep.target = self; menu.addItem(sleep)
 
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","); settings.target = self; menu.addItem(settings)
@@ -163,6 +164,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func openHome() { open("/") }
     @objc private func openSettings() { open("/settings") }
+
+    @objc private func sleepNow() {
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:7399/local/sleep")!); req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req).resume()
+    }
 
     @objc private func stayAwake(_ sender: NSMenuItem) {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:7399/local/awake")!)
