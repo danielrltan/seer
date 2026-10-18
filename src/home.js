@@ -44,7 +44,9 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .lap{stroke:#fff}
 .stay{padding:16px 18px 16px;border-radius:26px;margin-bottom:12px}
 .stay .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.stay .amt{font:700 24px/1 var(--round)}
+.stay .row:first-child{align-items:baseline}
+.stay .amt{font:700 24px/1 var(--round);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stay .amt small{font-size:.58em;font-weight:600;margin-left:2px;letter-spacing:0}
 .stay .r2{margin-top:4px}.stay .r2 .slider{flex:1;margin:0}
 #stay-now{color:var(--ink2)}
 .help{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;margin-bottom:12px;border-radius:20px;font-size:14.5px}
@@ -158,7 +160,7 @@ ${BACKDROP}
 </div>
 
 <section class="glass stay">
-  <div class="row"><span class="k">stay awake <span id="stay-now"></span></span><span class="amt" id="stay-amt">1 h</span></div>
+  <div class="row"><span class="k">stay awake <span id="stay-now"></span></span><span class="amt" id="stay-amt">1<small>h</small></span></div>
   <div class="row r2"><input class="slider" type="range" id="stay-r" min="0" max="11" value="4" aria-label="How long to stay awake"><span class="btns"><button class="btn" id="stay-x" hidden>${BTN.cancel}<span>Cancel</span></button><button class="btn tint" id="stay-b">${BTN.cup}<span>Start</span></button></span></div>
 </section>
 
@@ -300,8 +302,10 @@ async function refresh() {
 
 // stay awake: 10 min to 12 h, finer at the short end
 const STEPS = [10, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720];
-const span = m => m < 60 ? m + ' min' : (m % 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' m' : m / 60 + ' h');
-const paint = () => { const r = $('stay-r'); r.style.setProperty('--p', (r.value / r.max * 100) + '%'); $('stay-amt').textContent = span(STEPS[r.value]); };
+// The number big, its unit small beside it (as ping's ms): 45 min, 1 h, 1 h 30 min.
+const span = m => { const h = Math.floor(m / 60), mm = m % 60;
+  return [h ? h + '<small>h</small>' : '', mm ? mm + '<small>min</small>' : ''].filter(Boolean).join(' '); };
+const paint = () => { const r = $('stay-r'); r.style.setProperty('--p', (r.value / r.max * 100) + '%'); $('stay-amt').innerHTML = span(STEPS[r.value]); };
 $('stay-r').oninput = paint; paint();
 async function setStay(minutes) {
   try { await fetch('/awake', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ minutes }) }); } catch {}
