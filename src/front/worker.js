@@ -76,19 +76,20 @@ function desktopFrame(rawPath, mode, lite, macView) {
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>Desktop view</title>
 <style>
-html,body{margin:0;height:100%;background:#000;overflow:auto}
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#box{position:fixed;inset:0;overflow:hidden}
 #f{position:absolute;top:0;left:0;width:${WIDTH}px;height:${HEIGHT}px;border:0;transform-origin:0 0;background:#fff}
 #bar{position:fixed;right:calc(10px + env(safe-area-inset-right));bottom:calc(10px + env(safe-area-inset-bottom));z-index:2;display:flex;gap:6px}
 #bar button{height:34px;padding:0 12px;border-radius:17px;border:1px solid #262626;background:rgba(10,10,10,.85);color:#a1a1a1;font:500 13px -apple-system,system-ui,sans-serif}
 #bar button.on{color:#ededed;border-color:#00e676}
 </style></head><body>
-<iframe id="f"></iframe>
+<div id="box"><iframe id="f"></iframe></div>
 <div id="bar">${macView ? '<button id="mac">Mac</button>' : ''}<button id="laptop">Laptop</button><button id="tablet">iPad</button><button id="phone">Phone</button></div>
 <script>
 const f = document.getElementById('f');
 const setCookie = (k, v) => { document.cookie = k + '=' + v + '; Path=/; Secure; SameSite=Lax'; };
 // A view that crashed the tab (iOS reloads it) never reached pagehide: step down, laptop -> iPad -> light.
-let mode = ${JSON.stringify(mode || 'laptop')}, crashed = false;
+let mode = ${JSON.stringify(mode || 'tablet')}, crashed = false;
 try { crashed = sessionStorage.getItem('seer-desktop-open') === '1'; sessionStorage.setItem('seer-desktop-open', '1'); } catch {}
 addEventListener('pagehide', () => { try { sessionStorage.removeItem('seer-desktop-open'); } catch {} });
 if (crashed) { if (mode === 'laptop') mode = 'tablet'; else setCookie('seer_lite', '1'); }
@@ -106,7 +107,7 @@ function fit() {
   const w = document.documentElement.clientWidth, h = innerHeight, s = Math.min(w / ${WIDTH}, h / ${HEIGHT});
   f.style.transform = 'translate(' + Math.max(0, (w - ${WIDTH} * s) / 2) + 'px,' + Math.max(0, (h - ${HEIGHT} * s) / 2) + 'px) scale(' + s + ')';
 }
-addEventListener('resize', fit); fit();
+addEventListener('resize', fit); requestAnimationFrame(fit);   // after layout: an unfitted frame reads the wrong viewport
 document.getElementById('phone').onclick = () => { location.href = '/__seer/phone?path=' + encodeURIComponent(here()); };
 const macBtn = document.getElementById('mac');
 if (macBtn) macBtn.onclick = () => { location.href = ${JSON.stringify(macView || '')} + '&path=' + encodeURIComponent(here()); };
@@ -137,9 +138,14 @@ const LAPTOP_SHIM = `<script>(() => {${BASE_SHIM}
 const TABLET_SHIM = `<script>(() => {${BASE_SHIM}
 })();</script>`;
 // After an iPad view crashed too: the site is told the device is short on memory, so it serves its fallbacks.
+// and turns off WebGL antialiasing, which multiplies every 3D canvas's memory (measured: -41% on danielrltan.com).
 const LITE_SHIM = `<script>(() => {
   const def = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch {} };
   def(navigator, 'deviceMemory', 2); def(navigator, 'hardwareConcurrency', 2);
+  const get = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+    return get.call(this, type, /webgl/.test(type) ? { ...(attrs || {}), antialias: false } : attrs);
+  };
 })();</script>`;
 
 // The switch to desktop view (for a live Mac link, straight to the Mac view: rendered by the Mac, it cannot run
