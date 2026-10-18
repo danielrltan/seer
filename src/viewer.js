@@ -159,7 +159,12 @@ function syncViewport() {
   refit();
 }
 if (window.visualViewport) { visualViewport.addEventListener('resize', syncViewport); visualViewport.addEventListener('scroll', syncViewport); syncViewport(); }
-function applyView() { wrap.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')'; $('fit').textContent = zoom > 1.01 ? 'fit' : '1:1'; }
+// The zoomed view stops at its edges (as a zoomed page on iOS does): never panned off into empty space.
+function clampPan() {
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  panX = Math.min(0, Math.max(w - w * zoom, panX)); panY = Math.min(0, Math.max(h - h * zoom, panY));
+}
+function applyView() { if (zoom <= 1.001) { zoom = 1; panX = panY = 0; } clampPan(); wrap.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')'; $('fit').textContent = zoom > 1.01 ? 'fit' : '1:1'; }
 $('fit').onclick = () => {
   if (zoom > 1.01) { zoom = 1; panX = panY = 0; }
   else { const r = canvas.getBoundingClientRect(); zoom = Math.max(1, canvas.width / r.width); panX = -(r.width * zoom - r.width) / 2; panY = 0; }
@@ -181,14 +186,23 @@ function clearMods() { if (!mods.size) return; mods.clear(); document.querySelec
 let one = null, two = null, holdTimer = null, glide = null, lastTap = { t: 0, x: 0, y: 0 };
 const scale = () => { const r = canvas.getBoundingClientRect(); return r.width ? canvas.width / r.width : 1; };   // screen px -> remote px
 const scrollBy = (dx, dy) => { const k = scale(); send({ t: 'scroll', dx: Math.round(dx * k), dy: Math.round(dy * k) }); };
+// A swipe: while zoomed in it moves the zoomed view first, and scrolls the page only past the view's edge.
+function swipeBy(dx, dy) {
+  if (zoom > 1.01) {
+    const bx = panX, by = panY;
+    panX += dx; panY += dy; applyView();
+    dx -= panX - bx; dy -= panY - by;              // what the view could not take
+  }
+  if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) scrollBy(dx, dy);
+}
 function stopGlide() { if (glide) { cancelAnimationFrame(glide); glide = null; } }
 function startGlide(vx, vy) {                       // flick: keep scrolling, slowing down, like the phone does
   let last = performance.now();
   const step = now => {
     const dt = now - last; last = now;
-    vx *= Math.pow(0.95, dt / 16); vy *= Math.pow(0.95, dt / 16);
-    if (Math.hypot(vx, vy) < 0.05) { glide = null; return; }
-    scrollBy(vx * dt, vy * dt);
+    vx *= Math.pow(0.998, dt); vy *= Math.pow(0.998, dt);   // UIScrollView's normal deceleration rate
+    if (Math.hypot(vx, vy) < 0.02) { glide = null; return; }
+    swipeBy(vx * dt, vy * dt);
     glide = requestAnimationFrame(step);
   };
   glide = requestAnimationFrame(step);
@@ -232,8 +246,8 @@ stage.addEventListener('touchmove', e => {
     }
     if (one.mode === 'scroll') {
       const dx = t.clientX - one.x, dy = t.clientY - one.y, dt = Math.max(1, now - one.tm);
-      scrollBy(dx, dy);
-      one.vx = 0.7 * one.vx + 0.3 * (dx / dt); one.vy = 0.7 * one.vy + 0.3 * (dy / dt);
+      swipeBy(dx, dy);
+      one.vx = 0.6 * one.vx + 0.4 * (dx / dt); one.vy = 0.6 * one.vy + 0.4 * (dy / dt);
     } else if (one.mode === 'drag') send({ t: 'move', ...toRemote(t.clientX, t.clientY) });
     one.x = t.clientX; one.y = t.clientY; one.tm = now;
   } else if (two && e.touches.length === 2) {
@@ -248,8 +262,8 @@ stage.addEventListener('touchmove', e => {
       const sr = stage.getBoundingClientRect(), nz = Math.min(6, Math.max(1, zoom * (d / two.d)));
       const px = cx - sr.left, py = cy - sr.top;                       // keep the point under the fingers still
       panX = px - (px - panX) * (nz / zoom) + (cx - two.cx); panY = py - (py - panY) * (nz / zoom) + (cy - two.cy);
-      zoom = nz; if (zoom === 1) { panX = panY = 0; } applyView();
-    } else if (two.mode === 'pan') { panX += cx - two.cx; panY += cy - two.cy; applyView(); }
+      zoom = nz; applyView();
+    } else if (two.mode === 'pan') swipeBy(cx - two.cx, cy - two.cy);
     else if (two.mode === 'scroll') scrollBy(cx - two.cx, cy - two.cy);
     Object.assign(two, { d, cx, cy });
   }
