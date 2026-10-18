@@ -72,7 +72,7 @@ echo "built $OUT ($(du -sh "$OUT" | cut -f1))"
 
 if [ "${1:-}" = "--install" ]; then
   osascript -e 'tell application "Seer" to quit' >/dev/null 2>&1 || true
-  sleep 1
+  for _ in $(seq 20); do pgrep -qx Seer || break; sleep 0.5; done   # gone, or open below only wakes the one quitting
   rm -rf /Applications/Seer.app
   cp -R "$OUT" /Applications/Seer.app
   xattr -cr /Applications/Seer.app
