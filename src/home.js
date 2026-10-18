@@ -29,12 +29,18 @@ ${appHead}
 @media (prefers-reduced-motion: reduce){.state.idle,.eye.big.idling .open{animation:none}}
 .why{font-size:15px;color:var(--ink2)}
 .count{display:flex;align-items:center;gap:12px;margin-top:16px}
-.hero .srow{display:flex;align-items:center;gap:13px;margin-top:16px}
+.hero .top{gap:10px}
+.hero .dev{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* top right, as on the other cards: what this Mac is (laptop or desktop), beside the link chip */
+.hero .tr{flex:none;display:flex;align-items:center;gap:10px}
+.hero .dev-ic{display:grid;color:var(--ink2)}
+.hero .dev-ic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.hero .srow{display:flex;align-items:center;gap:15px;margin-top:16px}
 .hero .sw{flex:1;min-width:0}
-.hero .srow .state{margin:0;font-size:31px;line-height:1.22;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hero .srow .why{margin-top:1px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero .srow .state{margin:0;font-size:40px;line-height:1.22;white-space:nowrap}
+.hero .srow .why{margin-top:2px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the Mac's state as the eye: open, its pupil turning while an agent works, shut while the Mac sleeps */
-.hero .eye.big{flex:none;width:50px;height:37px}
+.hero .eye.big{flex:none;width:66px;height:48px}
 .hero #sleep-b{flex:none;align-self:center}
 #sleep-b.armed{background:rgba(255,90,95,.2);color:#ffd9da;box-shadow:inset 0 1px 0 rgba(255,200,200,.25),0 0 0 .5px rgba(255,90,95,.6)}
 .count .t{font:700 20px/1 var(--round);font-variant-numeric:tabular-nums;min-width:70px}
@@ -44,14 +50,14 @@ ${appHead}
 .tile{padding:13px 13px 12px;border-radius:22px;min-height:108px;display:flex;flex-direction:column;min-width:0}
 .tile .v{font:700 21px/1.1 var(--round);letter-spacing:-.02em;margin-top:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tile .th .ti{width:24px;height:16px}
-.tile.wide{padding:15px 18px 17px;border-radius:24px;min-height:150px}
+.tile.wide{padding:15px 18px 17px;border-radius:24px}
 .tile.wide .th .ti{width:30px;height:20px}
 .tile.wide .brow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:auto}
 .tile.wide .v{font-size:46px;margin-top:0;letter-spacing:-.035em}
 .tile.wide .s{margin:0;padding:0}
 .tile.wide .track{flex:none;margin-top:12px}
 /* the last 6 hours of charge, behind the number: a line and a soft fill, broken where the Mac slept */
-.bchart{flex:1 1 auto;min-height:0;width:100%;margin:10px 0 -26px;overflow:visible}
+.bchart{flex:none;height:38px;width:100%;margin:10px 0 -18px;overflow:visible}
 .bchart #bchart-l{fill:none;stroke:var(--live);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;opacity:.8}
 .bchart.red #bchart-l{stroke:var(--red)}.bchart.red stop{stop-color:var(--red)}
 .tile.wide .brow{position:relative}
@@ -120,7 +126,9 @@ main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
   min-height:calc(100vh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   min-height:calc(100dvh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
 #p-home>*{flex:none;margin:0}
-#p-home .tile.wide{flex:1 1 auto}
+#p-home .hero{flex:1 0 auto;display:flex;flex-direction:column}
+#p-home .hero .srow{margin:auto 0}
+#p-home .hero .count{margin-top:14px}
 #help:empty{display:none}
 #help .help:last-child{margin-bottom:0}
 /* the tab bar: a floating glass capsule; a lit glass pill slides under the tab that is open */
@@ -172,7 +180,7 @@ ${BACKDROP}
 
 <div class="pane on" id="p-home">
 <section class="glass hero">
-  <div class="top"><span class="k" id="dev">mac</span><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span></div>
+  <div class="top"><span class="k dev" id="dev">mac</span><span class="tr"><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span><i class="dev-ic" id="dev-ic"></i></span></div>
   <div class="srow">${MARK.replace('class="eye"', 'class="eye big" id="eye"')}<div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep</span></button></div>
   <div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div>
 </section>
@@ -302,6 +310,8 @@ function render() {
   // projects
   const dev = st.device || {};
   $('dev').textContent = dev.name || 'mac';
+  const devIcon = dev.kind === 'desktop' || (!dev.kind && st.lid === 'unknown') ? ICON.desktop : ICON.laptop;
+  if ($('dev-ic').innerHTML !== devIcon) $('dev-ic').innerHTML = devIcon;
   const rows = (st.desktop ? [{ name: dev.name || 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
     const live = p.state === 'running' || p.state === 'on demand' || p.state === 'streamed';
