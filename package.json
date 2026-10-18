@@ -2,7 +2,7 @@
   "name": "seer",
   "version": "0.1.0",
   "private": true,
-  "description": "Run a build and get a private link that opens it on your phone",
+  "description": "Check on your Mac and what it's building from your phone",
   "type": "module",
   "bin": {
     "seer": "bin/seer.js",
@@ -15,5 +15,6 @@
     "@modelcontextprotocol/sdk": "^1.17.0",
     "ws": "^8.22.0",
     "zod": "^3.25.0"
-  }
+  },
+  "license": "MIT"
 }
