@@ -7,6 +7,7 @@ import { parseArgs } from 'node:util';
 import { execFileSync } from 'node:child_process';
 import * as core from '../src/core.js';
 import * as away from '../src/awake.js';
+import * as cloud from '../src/cloud.js';
 import { uninstallAgents, installAgents } from '../src/services.js';
 import { HOME, loadConfig, saveConfig } from '../src/store.js';
 
@@ -21,6 +22,8 @@ const HELP = `seer: run a build and get a private link to open it on your phone
   seer down <name>        stop it; the link stops working
   seer list               every preview and its link
   seer setup --zone example.com --email you@example.com [--email ...]
+  seer cloud up [path] --name N --cmd "start command" [--build "cmd"]   a cloud copy on Fly (sleeps when idle)
+  seer cloud status | stop | down <name>
   seer desktop on|off     the parked remote desktop (/desktop): off unless turned on
   seer away on|off        keep the Mac awake while previews run, even with the lid closed (off by default)
   seer away install       let Seer keep the Mac awake with the lid closed (asks for sudo once)
@@ -34,7 +37,7 @@ const { values: o, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     name: { type: 'string' }, cmd: { type: 'string' }, port: { type: 'string' }, restart: { type: 'boolean' },
-    zone: { type: 'string' }, email: { type: 'string', multiple: true }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+    zone: { type: 'string' }, build: { type: 'string' }, idle: { type: 'string' }, email: { type: 'string', multiple: true }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
   },
 });
 
@@ -102,6 +105,15 @@ try {
       break;
     }
     case 'setup': { const steps = await core.setup({ zone: o.zone, emails: o.email }); show(steps, steps.map(s => `- ${s}`).join('\n')); break; }
+    case 'cloud': {
+      const sub = arg, rest = positionals[2];
+      if (sub === 'up') { const r = await cloud.cloudUp({ path: rest, name: o.name, cmd: o.cmd, build: o.build, idleMin: o.idle ? Number(o.idle) : undefined }); show(r, `${r.app}: deployed (${r.shippedMB} MB shipped)`); }
+      else if (sub === 'status') { const r = await cloud.cloudStatus(); show(r, r.map(c => `${c.name} (${c.app}): ${c.machines.map(m => `${m.state} ${m.size}`).join(', ') || 'no machines'}`).join('\n') || 'no cloud copies'); }
+      else if (sub === 'stop') { const r = await cloud.cloudStopAll(); show(r, r.length ? `stopped ${r.join(', ')}` : 'nothing was running'); }
+      else if (sub === 'down') { const r = await cloud.cloudDown(rest); show(r, `destroyed ${r.destroyed}`); }
+      else throw new Error('seer cloud up | status | stop | down <name>');
+      break;
+    }
     case 'desktop': {
       if (!['on', 'off'].includes(arg)) throw new Error('seer desktop on | off');
       saveConfig({ desktop: arg === 'on' });
