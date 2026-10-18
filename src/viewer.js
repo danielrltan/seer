@@ -53,7 +53,7 @@ body.kb-up.keys-open #stage{bottom:50px}
 </style></head><body>
 <div id="app">
 <div id="bar"><a href="${backHref.replace(/"/g, '&quot;')}" aria-label="Back">&larr;</a><span id="dot"></span><span id="msg">Connecting</span>
-<button id="kb" aria-label="Keyboard">&#9000;</button>${dock ? '<button id="dock" aria-label="Show the Dock">Dock</button>' : ''}<button id="fit" aria-label="Fit to screen">1:1</button></div>
+<button id="kb" aria-label="Keyboard">&#9000;</button>${dock ? '<button id="dock" aria-label="Show the Dock">Dock</button>' : ''}</div>
 <div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div></div>
 <div id="keys">
 <button data-mod="cmd">&#8984;</button><button data-mod="alt">&#8997;</button><button data-mod="ctrl">&#8963;</button><button data-mod="shift">&#8679;</button>
@@ -164,12 +164,8 @@ function clampPan() {
   const w = canvas.offsetWidth, h = canvas.offsetHeight;
   panX = Math.min(0, Math.max(w - w * zoom, panX)); panY = Math.min(0, Math.max(h - h * zoom, panY));
 }
-function applyView() { if (zoom <= 1.001) { zoom = 1; panX = panY = 0; } clampPan(); wrap.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')'; $('fit').textContent = zoom > 1.01 ? 'fit' : '1:1'; }
-$('fit').onclick = () => {
-  if (zoom > 1.01) { zoom = 1; panX = panY = 0; }
-  else { const r = canvas.getBoundingClientRect(); zoom = Math.max(1, canvas.width / r.width); panX = -(r.width * zoom - r.width) / 2; panY = 0; }
-  applyView();
-};
+function applyView() { if (zoom <= 1.001) { zoom = 1; panX = panY = 0; } clampPan(); wrap.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')'; }
+
 function toRemote(cx, cy) {
   const r = canvas.getBoundingClientRect(), nx = (cx - r.left) / r.width, ny = (cy - r.top) / r.height;
   return crop ? { x: crop.x + nx * crop.w, y: crop.y + ny * crop.h } : { x: nx, y: ny };
