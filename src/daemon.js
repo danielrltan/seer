@@ -170,6 +170,14 @@ const server = http.createServer(async (req, res) => {
       await tick();
       return json(200, { stayUntil: loadConfig().stayAwakeUntil || 0 });
     }
+    // Seer.app's menu (on this Mac, so no Cloudflare login to show): the same stay-awake as the slider.
+    if (url.pathname === '/local/awake' && req.method === 'POST' && !req.headers['cf-connecting-ip'] && req.socket.remoteAddress === '127.0.0.1' && !req.headers.origin) {
+      let body = ''; for await (const c of req) { body += c; if (body.length > 1000) break; }
+      const minutes = Math.max(0, Math.min(720, Math.round(Number(JSON.parse(body || '{}').minutes) || 0)));
+      saveConfig({ stayAwakeUntil: minutes ? Date.now() + minutes * 60_000 : 0 });
+      log(minutes ? `stay awake: ${minutes} min, from the menu bar` : 'stay awake: cancelled from the menu bar');
+      await tick(); res.writeHead(204); return res.end();
+    }
     if (url.pathname === '/kick' && req.method === 'POST' && !req.headers['cf-connecting-ip'] && req.socket.remoteAddress === '127.0.0.1') {
       tick(); res.writeHead(204); return res.end();
     }

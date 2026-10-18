@@ -4,7 +4,7 @@
 import net from 'node:net';
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
-import { battery, netState, WIFI_HELPER, ruleInstalled } from './awake.js';
+import { battery, netState, WIFI_HELPER, wifiArgs, ruleInstalled } from './awake.js';
 import path from 'node:path';
 import { HOME, loadConfig } from './store.js';
 
@@ -40,7 +40,7 @@ async function network() {
   const gateway = (route.match(/gateway:\s*(\S+)/) || [])[1] || null;
   const internetMs = await connectMs('1.1.1.1');
   let wifi = null;
-  if (fs.existsSync(WIFI_HELPER)) { try { wifi = JSON.parse(await run(WIFI_HELPER, ['status'])); } catch {} }
+  if (fs.existsSync(WIFI_HELPER)) { try { wifi = JSON.parse(await run(WIFI_HELPER, wifiArgs(['status']))); } catch {} }
   const ports = await run('/usr/sbin/networksetup', ['-listallhardwareports']);
   const wifiDev = (ports.match(/Hardware Port: Wi-Fi\s*\nDevice: (\S+)/) || [])[1] || 'en0';
   // An iPhone's Personal Hotspot always hands out 172.20.10.x with itself at 172.20.10.1.

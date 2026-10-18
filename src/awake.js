@@ -11,7 +11,9 @@ import { execFile } from 'node:child_process';
 import { HOME, loadConfig } from './store.js';
 
 const SUDO = '/usr/bin/sudo', PMSET = '/usr/bin/pmset', SECURITY = '/usr/bin/security';
-export const WIFI_HELPER = path.join(HOME, 'bin', 'seer-wifi');
+export const WIFI_HELPER = process.env.SEER_APP || path.join(HOME, 'bin', 'seer-wifi');
+// Inside Seer.app the helper is the app itself (`Seer wifi ...`); standalone, the seer-wifi binary.
+export const wifiArgs = args => (process.env.SEER_APP ? ['wifi', ...args] : args);
 const JOURNAL = path.join(HOME, 'awake.json');
 // % on battery. Low Power Mode at 30% stretches what is left; at 15% the Mac is let sleep, which still leaves
 // enough to open it and get back online later. Low Power Mode comes off again above 35% (or on power).
@@ -115,7 +117,7 @@ export async function joinHotspot() {
   if (!fs.existsSync(WIFI_HELPER)) return 'seer-wifi helper missing (seer away hotspot)';
   const pw = await readPassword(hotspotSsid);
   if (pw === null) return 'hotspot password missing from the keychain';
-  const r = await run(WIFI_HELPER, ['join', hotspotSsid], { input: pw + '\n', timeout: 60_000 });
+  const r = await run(WIFI_HELPER, wifiArgs(['join', hotspotSsid]), { input: pw + '\n', timeout: 60_000 });
   return r.stdout.trim() || r.stderr.trim() || `exit ${r.code}`;
 }
 

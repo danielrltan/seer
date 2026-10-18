@@ -44,6 +44,8 @@ function load(label, file) {
 }
 
 export async function installAgents() {
+  if (process.env.SEER_APP) return;                                 // Seer.app runs the daemon and the tunnel itself
+  if (fs.existsSync('/Applications/Seer.app')) { uninstallAgents(); return; }   // installed: the app does it, not launchd
   const cloudflared = which('cloudflared');
   if (!cloudflared) throw new Error('cloudflared is not installed: brew install cloudflared');
   fs.mkdirSync(AGENTS, { recursive: true });
