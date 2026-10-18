@@ -19,6 +19,19 @@ async function batteryDetail() {
 }
 
 // Seconds since the last keyboard, mouse or trackpad input (the system's own HID idle clock); null if unknown.
+// Is the Mac asleep and only half up (a dark wake: the network, no screen)? A sleeping Mac wakes like this every few
+// minutes, for maintenance or a packet, and answers the phone while it lasts. Seer must not take that for the
+// owner being back, nor turn it into a full wake. A full wake has graphics even with the display off or the lid
+// closed; a dark wake does not. Unknown reads as awake. Cached 2 s: every request asks.
+let dark = { at: 0, value: false };
+export async function darkWake() {
+  if (Date.now() - dark.at < 2000) return dark.value;
+  const out = await run('/usr/bin/pmset', ['-g', 'systemstate']);
+  const caps = out.match(/Capabilities are:(.*)/)?.[1];
+  dark = { at: Date.now(), value: caps != null && /\bCPU\b/.test(caps) && !/\bGraphics\b/.test(caps) };
+  return dark.value;
+}
+
 export async function idleSeconds() {
   const out = await run('/usr/sbin/ioreg', ['-c', 'IOHIDSystem', '-d', '4', '-r', '-k', 'HIDIdleTime']);
   const m = out.match(/"HIDIdleTime"\s*=\s*(\d+)/);

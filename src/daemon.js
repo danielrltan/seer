@@ -11,7 +11,7 @@ import { cleanName, loadConfig, saveConfig } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover, battery, ruleInstalled, savePassword, hasPassword, journal, claimJournal, sleepDisabled } from './awake.js';
 import { awakeReason, seen } from './activity.js';
-import { macStatus, clamshell, idleSeconds, sampleBattery } from './macstatus.js';
+import { macStatus, clamshell, idleSeconds, sampleBattery, darkWake } from './macstatus.js';
 import { decide, sleptBetween, onWake, HOLD_OFF_MS } from './power.js';
 import { homePage } from './home.js';
 import { settingsPage } from './settingspage.js';
@@ -92,6 +92,7 @@ export async function statusJson() {
     countdown: d.countdown, stayUntil: why.stayUntil || 0, reachableUntil: why.reachableUntil || 0,
     external, closingSleeps: d.closingSleeps, pluggedIn: !lastBattery.onBattery,
   };
+  if (await darkWake()) Object.assign(awake, { awake: false, label: 'Sleeping', why: '', countdown: null, inUse: false });
   const st = await macStatus({ awake, agentsBusy: why.agentsBusy || 0, lid: lidState, notes: d.notes });
   return { ...st, agents: runningAgents(), projects: await projects(), desktop: !!loadConfig().desktop };
 }
@@ -132,7 +133,8 @@ const server = http.createServer(async (req, res) => {
     // Someone opened a Seer page or did something: they may come back soon (the reachable window), and a Mac that
     // slept is theirs again (power.js sleepHold). The 5 s polls of an open page count for an hour after it was
     // opened, so a forgotten tab cannot keep the Mac up all night.
-    if (req.headers['cf-access-jwt-assertion']) {
+    // A Mac in a dark wake is asleep: a page opened then is no one coming back.
+    if (req.headers['cf-access-jwt-assertion'] && !(await darkWake())) {
       const poll = ['/status.json', '/ping', '/settings.json'].includes(url.pathname);
       if (!poll && url.pathname !== '/sleep') { seen(); visitAt = backAt = Date.now(); }
       else if (poll && Date.now() - visitAt < 3600_000) seen();

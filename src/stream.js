@@ -12,6 +12,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
 import { HOME, loadConfig } from './store.js';
+import { darkWake } from './macstatus.js';
 
 const SOCK = path.join(HOME, 'stream.sock');
 const MAX_BUFFERED = 512 * 1024;               // bytes queued to a viewer before its delta frames are dropped
@@ -214,6 +215,11 @@ export async function streamUpgrade(req, socket, head, log) {
   {
     req.who = await authorizeViewer(req, socket, log, 'desktop');
     if (!req.who) return;
+    // Asleep (a dark wake): say so rather than wake it. Waking the display would wake the whole Mac.
+    if (await darkWake()) return wss.handleUpgrade(req, socket, head, ws => {
+      log(`desktop viewer turned away: the Mac is asleep`);
+      ws.send(JSON.stringify({ error: 'The Mac is asleep' })); ws.close();
+    });
     wss.handleUpgrade(req, socket, head, ws => {
       log(`desktop viewer connected (${req.who}); ${viewers.size + 1} watching`);
       viewers.add(ws);

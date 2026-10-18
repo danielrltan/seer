@@ -135,7 +135,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('screen'), ctx = canvas.getContext('2d'), wrap = $('wrap'), stage = $('stage'), app = $('app'), pad = $('pad');
 // The dot always shows the state; the words show only while it is not simply live.
 const status = (text, cls) => { $('msg').textContent = text; $('msg').hidden = !text || text === 'Live'; $('dot').className = cls || ''; $('dot').setAttribute('aria-label', text); };
-let ws, decoder, configured = false, waitingKey = true, mods = new Set();
+let ws, decoder, configured = false, asleep = false, waitingKey = true, mods = new Set();
 let crop = null;   // { x, y, w, h } as fractions of the Mac's screen, or the whole screen
 let cursor = null; // where the Mac's pointer was last sent (fractions of its screen), for zooming around it
 let drawing = false, pendingJpeg = null;
@@ -183,6 +183,7 @@ document.addEventListener('touchend', () => {
 
 function connect() {
   status('Connecting', '');
+  asleep = false;
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ${JSON.stringify(wsPath)} + location.search);
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => status('Connecting', '');
@@ -190,6 +191,7 @@ function connect() {
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
       if (m.error) status(m.error, 'fail');
+      asleep = m.error === 'The Mac is asleep';
       if ('dock' in m && $('dock')) $('dock').classList.toggle('on', m.dock);
       if ('textFocus' in m) textFocus(m.textFocus);
       if (typeof m.clip === 'string') pendingClip = m.clip;
@@ -216,7 +218,8 @@ function connect() {
     decoder.decode(new EncodedVideoChunk({ type: type === 2 ? 'key' : 'delta', timestamp: ts, data: buf.subarray(9) }));
     if ($('dot').className !== 'live') status('Live', 'live');
   };
-  ws.onclose = () => { status('Reconnecting', 'fail'); configured = false; setTimeout(connect, 1500); };
+  // Asleep: keep saying so, and look again now and then (it is back once someone wakes it).
+  ws.onclose = () => { if (!asleep) status('Reconnecting', 'fail'); configured = false; setTimeout(connect, asleep ? 20000 : 1500); };
 }
 
 // ---------- view: fit, zoom and pan (local only) ----------

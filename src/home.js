@@ -1,4 +1,5 @@
-// Seer home: the Mac's state, its instruments, stay awake, and the projects, in dark Liquid Glass (glass.js).
+// Seer home, in three tabs under one glass tab bar: Home (the Mac's state, its instruments, stay awake), Monitors
+// (the Mac's screen and the projects) and Agents (Claude Code sessions). Dark Liquid Glass (glass.js).
 // Labels stay lowercase and every element carries information: no taglines, no coaching copy.
 // The page renders itself from the status JSON and refreshes every 5 s; ping is timed from the phone.
 import { GLASS_CSS, MARK, BACKDROP, GEAR, BACK } from './glass.js';
@@ -34,7 +35,6 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .stay .amt{font:700 24px/1 var(--round)}
 .help{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;margin-bottom:12px;border-radius:20px;font-size:14.5px}
 .help .dot{flex:none;width:8px;height:8px;margin-top:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 12px var(--amber)}
-.sect{font:600 13px var(--sans);color:var(--ink3);margin:22px 8px 9px}
 .list{border-radius:24px;overflow:hidden}
 .proj{display:flex;align-items:center;gap:13px;padding:14px 16px;position:relative}
 .proj+.proj:before{content:'';position:absolute;left:37px;right:0;top:0;border-top:1px solid var(--hair)}
@@ -47,10 +47,34 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .proj .pip.on.pulse{animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{50%{box-shadow:0 0 2px var(--glow);opacity:.55}}
 .proj .view{height:32px;padding:0 14px;display:inline-grid;place-items:center;font-size:13.5px;flex:none}
+main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
+/* tabs: one pane at a time, sliding in from the side of the tab tapped */
+.pane:not(.on){display:none}
+.pane.on{animation:pane-r .38s cubic-bezier(.32,.72,0,1)}
+.pane.on.from-l{animation-name:pane-l}
+@keyframes pane-r{from{opacity:0;transform:translateX(26px)}}
+@keyframes pane-l{from{opacity:0;transform:translateX(-26px)}}
+/* the tab bar: a floating glass capsule; a lit glass pill slides under the tab that is open */
+.tabs{position:fixed;z-index:6;left:0;right:0;bottom:calc(12px + env(safe-area-inset-bottom));margin:0 auto;width:min(calc(100% - 40px),340px);
+  height:64px;padding:6px;border-radius:32px;display:grid;grid-template-columns:repeat(3,1fr)}
+.tabs .sel{position:absolute;left:6px;top:6px;bottom:6px;width:calc((100% - 12px) / 3);border-radius:26px;pointer-events:none;
+  background:linear-gradient(160deg,rgba(255,255,255,.16),rgba(255,255,255,.05));box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 14px rgba(0,0,0,.3);
+  transition:transform .42s cubic-bezier(.32,.72,0,1)}
+.tabs button{position:relative;border:0;background:none;color:var(--ink3);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font:600 10.5px var(--sans);cursor:pointer;transition:color .25s}
+.tabs button svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabs button.on{color:var(--live);text-shadow:0 0 12px var(--glow)}
+.tabs button:active svg{transform:scale(.9)}
+.tabs .badge{position:absolute;top:5px;left:calc(50% + 7px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;
+  background:var(--live);color:#02170b;font:700 10.5px/16px var(--round);text-align:center;box-shadow:0 0 10px var(--glow)}
+.tabs .badge.amber{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+@media (prefers-reduced-motion: reduce){.pane.on{animation:none}.tabs .sel{transition:none}}
 /* opening a project: an iOS push. A glass sheet slides over from the right while the page under it slides a
    third of the way left and dims; the project loads behind the sheet, which stays until it arrives. */
 main{transition:transform .5s cubic-bezier(.32,.72,0,1),filter .5s}
 body.pushed main{transform:translateX(-30%);filter:brightness(.45)}
+.tabs{transition:transform .5s cubic-bezier(.32,.72,0,1),filter .5s}
+body.pushed .tabs{transform:translateX(-30%);filter:brightness(.45)}
 .push{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;transform:translateX(100%);visibility:hidden;
   transition:transform .5s cubic-bezier(.32,.72,0,1),visibility 0s .5s;
   background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.015) 40%),rgba(6,10,8,.72);
@@ -74,6 +98,7 @@ ${BACKDROP}
   <a class="icon-btn" href="/settings" aria-label="Settings">${GEAR}</a>
 </header>
 
+<div class="pane on" id="p-home">
 <section class="glass hero">
   <div class="top"><span class="k">mac</span><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span></div>
   <div class="state" id="state">—</div>
@@ -97,12 +122,18 @@ ${BACKDROP}
   <div class="row"><span class="k" id="stay-now"></span><span class="btns"><button class="btn" id="stay-x" hidden>Cancel</button><button class="btn tint" id="stay-b">Start</button></span></div>
 </section>
 
-<div id="agents-w" hidden><div class="sect">agents</div>
-<div class="glass list" id="agents"></div></div>
+</div>
 
-<div class="sect">projects</div>
-<div class="glass list" id="projects"></div>
+<div class="pane" id="p-monitors"><div class="glass list" id="projects"></div></div>
+
+<div class="pane" id="p-agents"><div class="glass list" id="agents"></div></div>
 </main>
+<nav class="glass tabs" id="tabs">
+  <span class="sel" id="tab-sel"></span>
+  <button data-tab="home" class="on"><svg viewBox="0 0 24 24"><path d="M4 16.5a8 8 0 1 1 16 0"/><path d="M12 16.5l3.6-4.6"/><circle cx="12" cy="16.5" r="1.2" fill="currentColor" stroke="none"/></svg>Home</button>
+  <button data-tab="monitors"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12.5" rx="2.4"/><path d="M12 16.5V20M8.5 20h7"/></svg>Monitors</button>
+  <button data-tab="agents"><svg viewBox="0 0 24 24"><path d="M12 4.5c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7Z"/></svg>Agents<span class="badge" id="ag-badge" hidden></span></button>
+</nav>
 <div class="push" id="push" aria-hidden="true">
   <header class="glass bar"><button class="icon-btn" id="push-back" aria-label="Back" style="border:0">${BACK}</button><span class="title" id="push-t"></span></header>
   <div class="wait">${MARK.replace('id="pupil"', 'class="spokes"')}</div>
@@ -160,11 +191,13 @@ function render() {
   $('help').innerHTML = st.help.map(t => '<div class="glass help"><i class="dot"></i><span>' + esc(t) + '</span></div>').join('');
   // agents: Claude Code sessions on this Mac; View opens the session's Remote Control page (the Claude app on a phone)
   const ago = t => { const m = Math.round((Date.now() - t) / 60_000); return m < 1 ? 'now' : m < 60 ? m + ' min' : m < 2880 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'; };
-  const ag = st.agents || [];
-  $('agents-w').hidden = !ag.length;
-  $('agents').innerHTML = ag.map(g => '<div class="proj"><span class="pip ' + (g.busy ? 'on pulse' : '') + '"></span>'
-    + '<div class="main"><div class="nm">' + esc(g.name) + '</div><div class="meta">' + esc([g.busy ? 'working' : 'idle ' + ago(g.since), g.dir].filter(Boolean).join(' · ')) + '</div></div>'
-    + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View</a>' : '') + '</div>').join('');
+  const ag = st.agents || [], working = ag.filter(g => g.busy).length, waiting = ag.filter(g => g.waiting).length;
+  $('ag-badge').hidden = !(working || waiting);
+  $('ag-badge').textContent = waiting || working;                // one needing you outranks the count working
+  $('ag-badge').className = 'badge' + (waiting ? ' amber' : '');
+  $('agents').innerHTML = ag.length ? ag.map(g => '<div class="proj"><span class="pip ' + (g.waiting ? 'amber' : g.busy ? 'on pulse' : '') + '"></span>'
+    + '<div class="main"><div class="nm">' + esc(g.name) + '</div><div class="meta">' + esc([g.waiting ? 'needs you' : g.busy ? 'working' : 'idle ' + ago(g.since), g.dir].filter(Boolean).join(' · ')) + '</div></div>'
+    + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View</a>' : '') + '</div>').join('') : '<p class="empty">no agents</p>';
   // projects
   const rows = (st.desktop ? [{ name: 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
@@ -235,6 +268,35 @@ $('projects').addEventListener('click', e => {
 const unpush = () => document.body.classList.remove('pushed');
 $('push-back').onclick = () => { window.stop(); unpush(); };
 window.addEventListener('pageshow', e => { if (e.persisted) requestAnimationFrame(unpush); });   // back from a project
+
+// Tabs. The open one is kept in the address (#monitors, #agents) so back from a project lands where it was;
+// each keeps its own scroll.
+const TABS = ['home', 'monitors', 'agents'], scrolls = {};
+let tab = 'home';
+function show(t, animate) {
+  if (!TABS.includes(t)) t = 'home';
+  const from = TABS.indexOf(tab), to = TABS.indexOf(t);
+  if (t !== tab) scrolls[tab] = scrollY;
+  for (const k of TABS) {
+    const p = $('p-' + k);
+    p.classList.toggle('on', k === t);
+    p.classList.toggle('from-l', to < from);
+    if (!animate) p.style.animation = 'none'; else p.style.animation = '';
+  }
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  $('tab-sel').style.transform = 'translateX(' + to * 100 + '%)';
+  tab = t;
+  history.replaceState(null, '', t === 'home' ? location.pathname + location.search : '#' + t);
+  scrollTo(0, scrolls[t] || 0);
+}
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-tab]');
+  if (!b) return;
+  if (b.dataset.tab === tab) { scrollTo({ top: 0, behavior: 'smooth' }); return; }    // tapping the open tab scrolls up
+  show(b.dataset.tab, true);
+});
+show(location.hash.slice(1), false);
+requestAnimationFrame(() => requestAnimationFrame(() => { for (const k of TABS) $('p-' + k).style.animation = ''; }));
 
 render(); refresh();
 setInterval(tick, 1000);
