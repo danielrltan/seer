@@ -4,6 +4,7 @@
 // from the home page's own origin. The daemon listens on 127.0.0.1, where any page in a local browser could
 // otherwise open a WebSocket to it.
 import { watchClipboard, stopClipboard } from './clipboard.js';
+import { settings } from './settings.js';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
@@ -149,6 +150,22 @@ function readNatural() {
 readNatural(); setInterval(readNatural, 60_000).unref();
 const wheel = input => (input.t === 'scroll' && natural ? { ...input, dx: -input.dx, dy: -input.dy } : input);
 
+// Scroll arrives in uneven bursts (the phone's touch rate, then the network bunching it) and the Mac would apply
+// each burst at once: a judder. So scroll goes into a reservoir that drains every 8 ms by a third of what is
+// left (about 20 ms behind the finger), which turns bursts into an even glide. Settings: scroll speed.
+let resX = 0, resY = 0, drain = null;
+function queueScroll(input) {
+  const k = settings().scrollSpeed / 100;
+  resX += input.dx * k; resY += input.dy * k;
+  drain ||= setInterval(() => {
+    const near = Math.abs(resX) < 2 && Math.abs(resY) < 2;
+    const dx = Math.round(near ? resX : resX * 0.34), dy = Math.round(near ? resY : resY * 0.34);
+    resX -= dx; resY -= dy;
+    if (dx || dy) toHelper({ cmd: 'input', t: 'scroll', dx, dy });
+    if (near) { clearInterval(drain); drain = null; resX = resY = 0; }
+  }, 8);
+}
+
 export function initStream(log) {
   connectHelper(log);
   restoreDock();                                                                  // a crash left it shown
@@ -174,7 +191,7 @@ export async function streamUpgrade(req, socket, head, log) {
         if (m.t === 'keyframe') return requestKey();
         if (m.t === 'dock') return toggleDock();
         const input = cleanInput(m);
-        if (input) toHelper(wheel(input));
+        if (input) input.t === 'scroll' ? queueScroll(wheel(input)) : toHelper(wheel(input));
       });
       ws.on('close', () => {
         viewers.delete(ws);

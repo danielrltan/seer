@@ -291,7 +291,11 @@ enum Input {
             if !down && !right { Focus.checkSoon() }
         case "scroll":
             let dx = Int32((j["dx"] as? Double) ?? 0), dy = Int32((j["dy"] as? Double) ?? 0)
-            CGEvent(scrollWheelEvent2Source: src, units: .pixel, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)?.post(tap: .cghidEventTap)
+            // Continuous, as a trackpad's: apps then move by exactly these pixels (precise deltas) instead of
+            // animating each event as a mouse-wheel notch, which stutters when they come 120 times a second.
+            let e = CGEvent(scrollWheelEvent2Source: src, units: .pixel, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)
+            e?.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            e?.post(tap: .cghidEventTap)
         case "text":
             for ch in ((j["text"] as? String) ?? "") {
                 let utf16 = Array(String(ch).utf16)

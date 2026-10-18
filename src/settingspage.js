@@ -79,6 +79,8 @@ ${BACKDROP}
   <label class="row"><span class="l">Desktop stream<span class="d" id="desktop-d"></span></span><input type="checkbox" class="switch" data-k="desktop"></label>
   <div class="row col"><div class="top"><span class="l">Close Mac view after<span class="d" id="macViewCloseMin-d"></span></span><span class="val" id="macViewCloseMin-v"></span></div>
     <input type="range" class="slider" data-k="macViewCloseMin" min="1" max="30" step="1" data-unit="min"></div>
+  <div class="row col"><div class="top"><span class="l">Scroll speed<span class="d" id="scrollSpeed-d"></span></span><span class="val" id="scrollSpeed-v"></span></div>
+    <input type="range" class="slider" data-k="scrollSpeed" min="25" max="200" step="5" data-unit="%"></div>
 </div>
 
 <div class="sect">agents</div>

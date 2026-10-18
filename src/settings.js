@@ -29,6 +29,7 @@ export const SPEC = {
   // streaming
   desktop:          { type: 'bool', def: false },
   macViewCloseMin:  { type: 'int', def: 2, min: 1, max: 30 },
+  scrollSpeed:      { type: 'int', def: 100, min: 25, max: 200 },   // % of finger-for-finger
   // app
   launchAtLogin:    { type: 'bool', def: true },
 };
