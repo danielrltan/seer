@@ -10,7 +10,7 @@
 // server, and to its scripts no touch points, a fine pointer, a 1440x900 screen and a Mac platform. A small
 // eye button (on the project's own pages, in the phone view) switches to it.
 const DESKTOP_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
-const WIDTH = 1440;
+const WIDTH = 1440, HEIGHT = 900;   // a laptop screen: a taller frame would render several screens of the page at once
 
 export default {
   async fetch(request, env) {
@@ -28,10 +28,12 @@ export default {
     const target = route.mac ? new URL(request.url) : new URL(url.pathname + url.search, `https://${route.app}.fly.dev`);
     const headers = new Headers(request.headers);
     if (!route.mac) headers.set('x-seer-key', route.key);
-    headers.delete('cf-access-jwt-assertion');
+    // A live Mac link is passed to the same hostname, which Access guards too: it keeps the sign-in (cookie and
+    // token) or Access would send it back to the login page, round and round. A cloud copy never sees them.
+    if (!route.mac) headers.delete('cf-access-jwt-assertion');
     if (desktop) { headers.set('user-agent', DESKTOP_UA); headers.delete('sec-ch-ua-mobile'); headers.delete('sec-ch-ua-platform'); }
-    // Access's own cookie and Seer's view cookie stay at the front door; the project never sees them.
-    const cookies = (headers.get('cookie') || '').split(/;\s*/).filter(c => c && !/^(CF_Authorization|seer_view)=/.test(c));
+    // Seer's view cookie stays at the front door; so does Access's, except on the way to the Mac (above).
+    const cookies = (headers.get('cookie') || '').split(/;\s*/).filter(c => c && !(route.mac ? /^seer_view=/ : /^(CF_Authorization|seer_view)=/).test(c));
     if (cookies.length) headers.set('cookie', cookies.join('; ')); else headers.delete('cookie');
 
     const init = { method: request.method, headers, redirect: 'manual', body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body };
@@ -42,6 +44,7 @@ export default {
       res = await fetch(target, init);
     }
 
+    console.log(JSON.stringify({ host: url.hostname, path: url.pathname, dest, mac: !!route.mac, desktop, status: res.status, location: res.headers.get('location') || undefined }));
     if (reset) { res = new Response(res.body, res); res.headers.append('set-cookie', 'seer_view=; Path=/; Max-Age=0; Secure; SameSite=Lax'); }
     if (!(res.headers.get('content-type') || '').includes('text/html')) return res;
     if (desktop && dest === 'iframe') return new HTMLRewriter().on('head', { element: e => e.prepend(DESKTOP_SHIM, { html: true }) }).transform(res);
@@ -64,14 +67,17 @@ function desktopFrame(rawPath) {
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>Desktop view</title>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:auto}
-#f{position:absolute;top:0;left:0;width:${WIDTH}px;border:0;transform-origin:0 0;background:#fff}
+#f{position:absolute;top:0;left:0;width:${WIDTH}px;height:${HEIGHT}px;border:0;transform-origin:0 0;background:#fff}
 #phone{position:fixed;right:calc(10px + env(safe-area-inset-right));bottom:calc(10px + env(safe-area-inset-bottom));z-index:2;height:34px;padding:0 12px;border-radius:17px;border:1px solid #262626;background:rgba(10,10,10,.85);color:#ededed;font:500 13px -apple-system,system-ui,sans-serif}
 </style></head><body>
 <iframe id="f" src="${path.replace(/"/g, '&quot;')}"></iframe>
 <button id="phone">Phone view</button>
 <script>
 const f = document.getElementById('f');
-function fit() { const s = document.documentElement.clientWidth / ${WIDTH}; f.style.transform = 'scale(' + s + ')'; f.style.height = Math.ceil(innerHeight / s) + 'px'; }
+function fit() {
+  const w = document.documentElement.clientWidth, h = innerHeight, s = Math.min(w / ${WIDTH}, h / ${HEIGHT});
+  f.style.transform = 'translate(' + Math.max(0, (w - ${WIDTH} * s) / 2) + 'px,' + Math.max(0, (h - ${HEIGHT} * s) / 2) + 'px) scale(' + s + ')';
+}
 addEventListener('resize', fit); fit();
 document.getElementById('phone').onclick = () => {
   let p = '/'; try { const l = f.contentWindow.location; p = l.pathname + l.search + l.hash; } catch {}
@@ -85,8 +91,9 @@ document.getElementById('phone').onclick = () => {
 const DESKTOP_SHIM = `<script>(() => {
   const def = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch {} };
   def(navigator, 'userAgent', ${JSON.stringify(DESKTOP_UA)}); def(navigator, 'platform', 'MacIntel');
-  def(navigator, 'maxTouchPoints', 0); def(screen, 'width', ${WIDTH}); def(screen, 'height', 900);
+  def(navigator, 'maxTouchPoints', 0); def(screen, 'width', ${WIDTH}); def(screen, 'height', ${HEIGHT});
   def(screen, 'availWidth', ${WIDTH}); def(screen, 'availHeight', 875);
+  def(window, 'devicePixelRatio', 1);   // a phone's 3x would make WebGL and canvases draw 9x the pixels of a laptop
   const mm = window.matchMedia.bind(window);
   window.matchMedia = q => mm(String(q)
     .replace(/\\(\\s*(any-)?pointer\\s*:\\s*coarse\\s*\\)/g, '(max-width: 0px)').replace(/\\(\\s*(any-)?pointer\\s*:\\s*fine\\s*\\)/g, '(min-width: 0px)')
