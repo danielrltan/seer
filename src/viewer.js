@@ -57,7 +57,7 @@ canvas{display:block}
    the position the Mac reports; the Mac's own cursor is unchanged. */
 #halo{position:absolute;left:0;top:0;width:13px;height:20px;transform-origin:0 0;overflow:visible;pointer-events:none;z-index:2;opacity:0;
   filter:drop-shadow(0 1px 2px rgba(0,0,0,.45)) drop-shadow(0 0 5px var(--glow));transition:opacity .35s}
-#halo path{fill:var(--live);stroke:var(--live);stroke-width:1.3;stroke-linejoin:round}   /* the stroke only rounds and fills out the shape, all green
+#halo path{fill:var(--live);stroke:var(--live);stroke-width:1.3;stroke-linejoin:round}   /* the stroke only rounds and fills out the shape, all green */
 #halo.on{opacity:1}#halo.on.rest{opacity:.7}
 .ripple{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;pointer-events:none;z-index:2;
   border:2.5px solid var(--live);box-shadow:0 0 10px var(--glow);animation:ripple .5s cubic-bezier(.2,.7,.3,1) forwards}
