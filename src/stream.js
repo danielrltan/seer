@@ -45,6 +45,10 @@ export async function verifyAccess(token, cfg) {
 // ---------- SeerStream connection ----------
 const viewers = new Set();
 export const viewerCount = () => viewers.size;
+// Streaming, for keeping the Mac up: someone is watching and the picture is coming, or capture started in the last
+// 15 s (the screen may still be waking). A viewer left on a failed capture holds nothing.
+let capturing = false, captureAsked = 0;
+export const streamingNow = () => viewers.size > 0 && (capturing || Date.now() - captureAsked < 15_000);
 let helper = null, helperBuf = Buffer.alloc(0), lastConfig = null, lastKeyAt = 0;
 
 function toHelper(obj) { if (helper && !helper.destroyed) helper.write(JSON.stringify(obj) + '\n'); }
@@ -68,7 +72,10 @@ function connectHelper(log) {
       if (type === 4) {                         // status; the same error again within 30 s is not news (one per tap otherwise)
         let text = frame.subarray(5).toString();
         if (text.startsWith('{"cursor"')) { for (const v of viewers) v.send(text); continue; }   // up to 30 a second: not logged or deduped
-        if (/Screen Recording|declined TCC|screen-recording/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Screen Recording settings on the Mac' });
+        if (/"capturing":true/.test(text)) capturing = true;
+        else if (/"capturing":false|"error"/.test(text)) capturing = false;
+        if (/no display to capture|Failed to find any displays/.test(text)) text = JSON.stringify({ error: 'No screen to show with the lid closed' });
+        else if (/Screen Recording|declined TCC|screen-recording/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Screen Recording settings on the Mac' });
         else if (/"error":"accessibility"|Accessibility not allowed|needs Accessibility/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Accessibility settings on the Mac' });
         if (/"error"/.test(text) && text === lastStatus.text && Date.now() - lastStatus.at < 30_000) continue;   // only repeated errors
         lastStatus = { text, at: Date.now() };
@@ -89,6 +96,7 @@ function connectHelper(log) {
 }
 
 function startCapture() {
+  captureAsked = Date.now();
   const { stream = {} } = loadConfig();
   toHelper({ cmd: 'start', maxWidth: stream.maxWidth || 1512, fps: stream.fps || 30, bitrate: stream.bitrate || 3_000_000 });
 }
@@ -247,7 +255,7 @@ export async function streamUpgrade(req, socket, head, log) {
         if (ws.scrolling) toHelper({ cmd: 'input', t: 'scroll', phase: 'end', dx: 0, dy: 0, vx: 0, vy: 0 });
         viewers.delete(ws);
         log(`desktop viewer left; ${viewers.size} watching`);
-        if (!viewers.size) { toHelper({ cmd: 'stop' }); lastConfig = null; restoreDock(); stopClipboard(); }
+        if (!viewers.size) { toHelper({ cmd: 'stop' }); capturing = false; lastConfig = null; restoreDock(); stopClipboard(); }
       });
     });
   }

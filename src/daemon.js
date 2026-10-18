@@ -21,7 +21,7 @@ import { hooksInstalled, installHooks } from './hooks.js';
 import { runningAgents } from './agents.js';
 import { ICON_V, ICON_HEAD, iconCache, FONT_V, MANIFEST } from './icons.js';
 import { sleepDisplay, freezeApps, thawAll, frozenCount, muteOutput, unmuteOutput } from './headless.js';
-import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
+import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount, streamingNow } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
 import { WebSocketServer } from 'ws';
 import { desktopPage } from './viewer.js';
@@ -307,7 +307,7 @@ let lastBattery = { onBattery: false, pct: 100 }, lastWatching = false, lastClos
 let windowSince = 0, netTick = 0, failures = 0, pmsetFailedAt = 0, visitAt = 0, backAt = 0, deadline = null, started = false, stopping = false;
 const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
 const checkNetwork = failover(log);
-const watchingNow = () => viewerCount() > 0 || windowOpen();
+const watchingNow = () => streamingNow() || windowOpen();
 
 // caffeinate -w: it lets go by itself the moment this daemon dies, however it dies.
 function startCaffeinate() {
