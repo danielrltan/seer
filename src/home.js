@@ -31,8 +31,8 @@ ${appHead}
 .count{display:flex;align-items:center;gap:12px;margin-top:16px}
 .hero .srow{display:flex;align-items:center;gap:13px;margin-top:16px}
 .hero .sw{flex:1;min-width:0}
-.hero .srow .state{margin:0;font-size:31px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hero .srow .why{margin-top:5px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero .srow .state{margin:0;font-size:31px;line-height:1.22;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero .srow .why{margin-top:1px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the Mac's state as the eye: open, its pupil turning while an agent works, shut while the Mac sleeps */
 .hero .eye.big{flex:none;width:50px;height:37px}
 .hero #sleep-b{flex:none;align-self:center}
