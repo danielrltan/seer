@@ -140,3 +140,56 @@ export async function closeSession(session, log) {
   try { await fetch(`http://127.0.0.1:${PORT}/json/close/${session.targetId}`); } catch {}
   quitSoon(log);
 }
+
+// ---------- window mode: a real Chrome window on the Mac, shown through the screen stream ----------
+// Headless Chrome has no display (CVDisplayLink fails), so some pages' animation-driven loading never fires.
+// When the screen stream is on (`seer desktop on`), the Mac view instead opens the project in a real,
+// chromeless Chrome window at laptop size, and the phone shows the stream cropped to that window.
+const WIN_PORT = 9334, WIN_PROFILE = path.join(HOME, 'chrome-window');
+let winChrome = null, winQuit = null;
+
+async function browserCdp(port) {
+  const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+  const b = cdp(webSocketDebuggerUrl);
+  await b.opened;
+  return b;
+}
+
+// Opens (or reuses) the window on url; returns its bounds and the screen's size, both in screen points.
+export async function openWindow(url, log) {
+  clearTimeout(winQuit);
+  if (!winChrome || winChrome.exitCode !== null) {
+    fs.mkdirSync(WIN_PROFILE, { recursive: true });
+    winChrome = spawn(CHROME, [
+      `--remote-debugging-port=${WIN_PORT}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${WIN_PROFILE}`,
+      '--no-first-run', '--no-default-browser-check', `--app=${url}`, `--window-size=${W},${H}`, '--window-position=0,0',
+      '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+    ], { stdio: 'ignore' });
+    winChrome.on('exit', () => { winChrome = null; log('mac view: window closed'); });
+    for (let i = 0; i < 40; i++) { try { await fetch(`http://127.0.0.1:${WIN_PORT}/json/version`); break; } catch {} await new Promise(r => setTimeout(r, 250)); }
+    log(`mac view: window opened on ${url}`);
+  }
+  const targets = await (await fetch(`http://127.0.0.1:${WIN_PORT}/json/list`)).json();
+  let page = targets.find(t => t.type === 'page');
+  for (let i = 0; !page && i < 20; i++) { await new Promise(r => setTimeout(r, 250)); page = (await (await fetch(`http://127.0.0.1:${WIN_PORT}/json/list`)).json()).find(t => t.type === 'page'); }
+  if (!page) throw new Error('the Chrome window did not open');
+  const tab = cdp(page.webSocketDebuggerUrl);
+  await tab.opened;
+  if (page.url !== url) await tab.call('Page.navigate', { url });
+  await tab.call('Page.bringToFront');
+  // Laptop-sized, just under the menu bar, wholly on screen.
+  const screenInfo = (await tab.call('Runtime.evaluate', { expression: 'JSON.stringify({ w: screen.width, h: screen.height, top: screen.availTop || 25 })', returnByValue: true })).result.value;
+  const scr = JSON.parse(screenInfo);
+  const b = await browserCdp(WIN_PORT);
+  const { windowId } = await b.call('Browser.getWindowForTarget', { targetId: page.id });
+  await b.call('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
+  await b.call('Browser.setWindowBounds', { windowId, bounds: { left: 0, top: scr.top, width: Math.min(W, scr.w), height: Math.min(H, scr.h - scr.top) } });
+  const { bounds } = await b.call('Browser.getWindowBounds', { windowId });
+  b.close(); tab.close();
+  return { bounds, screen: { width: scr.w, height: scr.h } };
+}
+
+export function closeWindow(log) {
+  if (winChrome) { winChrome.kill(); winChrome = null; log('mac view: window closed (nobody watching)'); }
+}
+export const windowOpen = () => !!winChrome;

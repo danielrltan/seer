@@ -41,6 +41,7 @@ export async function verifyAccess(token, cfg) {
 
 // ---------- SeerStream connection ----------
 const viewers = new Set();
+export const viewerCount = () => viewers.size;
 let helper = null, helperBuf = Buffer.alloc(0), lastConfig = null, lastKeyAt = 0;
 
 function toHelper(obj) { if (helper && !helper.destroyed) helper.write(JSON.stringify(obj) + '\n'); }

@@ -2,7 +2,9 @@
 // mouse and keyboard. One finger: tap = click, hold = right click, drag = drag. Two fingers: pinch = zoom,
 // move = pan when zoomed, otherwise scroll. The keyboard button opens the phone's keyboard and a key bar.
 // opts: wsPath (the socket; the page's own query string is passed on), dock (the Dock button), title.
-export function desktopPage({ wsPath = '/desktop/ws', dock = true, title = 'Seer' } = {}) {
+// openPath: POSTed first (with the page's query string); its { crop } (fractions of the screen) limits the view
+// to that part of the screen, and taps map into it (the Mac view's window).
+export function desktopPage({ wsPath = '/desktop/ws', dock = true, title = 'Seer', openPath = null } = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>${title}</title>
@@ -67,6 +69,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('screen'), ctx = canvas.getContext('2d'), wrap = $('wrap'), stage = $('stage');
 const status = (text, cls) => { $('msg').textContent = text; $('dot').className = cls || ''; };
 let ws, decoder, configured = false, waitingKey = true, mods = new Set();
+let crop = null;   // { x, y, w, h } as fractions of the Mac's screen, or the whole screen
 let drawing = false, pendingJpeg = null;
 function drawJpeg(buf) {
   drawing = true;
@@ -83,8 +86,11 @@ function makeDecoder(cfg) {
   if (decoder && decoder.state !== 'closed') decoder.close();
   decoder = new VideoDecoder({
     output: frame => {
-      if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) { canvas.width = frame.displayWidth; canvas.height = frame.displayHeight; fit(); }
-      ctx.drawImage(frame, 0, 0); frame.close();
+      const fw = frame.displayWidth, fh = frame.displayHeight;
+      const sx = crop ? Math.round(crop.x * fw) : 0, sy = crop ? Math.round(crop.y * fh) : 0;
+      const sw = crop ? Math.round(crop.w * fw) : fw, sh = crop ? Math.round(crop.h * fh) : fh;
+      if (canvas.width !== sw || canvas.height !== sh) { canvas.width = sw; canvas.height = sh; fit(); }
+      ctx.drawImage(frame, sx, sy, sw, sh, 0, 0, sw, sh); frame.close();
     },
     error: e => { status('Decoder: ' + e.message, 'fail'); configured = false; waitingKey = true; send({ t: 'keyframe' }); },
   });
@@ -161,8 +167,8 @@ $('fit').onclick = () => {
   applyView();
 };
 function toRemote(cx, cy) {
-  const r = canvas.getBoundingClientRect();
-  return { x: (cx - r.left) / r.width, y: (cy - r.top) / r.height };
+  const r = canvas.getBoundingClientRect(), nx = (cx - r.left) / r.width, ny = (cy - r.top) / r.height;
+  return crop ? { x: crop.x + nx * crop.w, y: crop.y + ny * crop.h } : { x: nx, y: ny };
 }
 const withMods = o => { if (mods.size) o.mods = [...mods]; return o; };
 function clearMods() { if (!mods.size) return; mods.clear(); document.querySelectorAll('[data-mod]').forEach(b => b.classList.remove('on')); }
@@ -286,7 +292,19 @@ input.addEventListener('input', e => {
   else send({ t: 'text', text });
 });
 
-if (!('VideoDecoder' in window)) status('This browser cannot play the stream (no WebCodecs)', 'fail');
-else connect();
+async function start() {
+  if (${JSON.stringify(openPath)}) {
+    status('Opening on the Mac', '');
+    try {
+      const r = await fetch(${JSON.stringify(openPath)} + location.search, { method: 'POST' });
+      const body = await r.json();
+      if (!r.ok) return status(body.error || 'Could not open it on the Mac', 'fail');
+      crop = body.crop;
+    } catch { return status('Could not reach the Mac', 'fail'); }
+  }
+  connect();
+}
+if (!('VideoDecoder' in window) && ${JSON.stringify(wsPath)} === '/desktop/ws') status('This browser cannot play the stream (no WebCodecs)', 'fail');
+else start();
 </script></body></html>`;
 }

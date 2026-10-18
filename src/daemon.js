@@ -9,8 +9,8 @@ import { tail } from './devserver.js';
 import { cleanName, loadConfig } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover } from './awake.js';
-import { initStream, streamUpgrade, authorizeViewer, cleanInput } from './stream.js';
-import { localTarget, openSession, input as renderInput, closeSession } from './render.js';
+import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
+import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
 import { WebSocketServer } from 'ws';
 import { desktopPage } from './viewer.js';
 import { ensureStreamAuth } from './core.js';
@@ -104,7 +104,26 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' });
       return res.end(fs.readFileSync(new URL(`../assets/icon-${icon[1]}.png`, import.meta.url)));
     }
-    if (url.pathname === '/render') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage({ wsPath: '/render/ws', dock: false, title: 'Mac view' })); }
+    // Mac view. With the screen stream on: a real Chrome window on the Mac, shown through the stream cropped to it
+    // (/render/open opens it). Without: headless Chrome frames (/render/ws).
+    if (url.pathname === '/render') {
+      const page = loadConfig().desktop ? desktopPage({ wsPath: '/desktop/ws', dock: false, title: 'Mac view', openPath: '/render/open' })
+        : desktopPage({ wsPath: '/render/ws', dock: false, title: 'Mac view' });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(page);
+    }
+    if (url.pathname === '/render/open' && req.method === 'POST') {
+      const cfg = loadConfig();
+      const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
+      if (req.headers.origin !== `https://seer.${cfg.zone}` || !(await verifyAccess(req.headers['cf-access-jwt-assertion'], cfg).catch(() => null))) return json(403, { error: 'sign in first' });
+      const target = localTarget(url.searchParams.get('host'), url.searchParams.get('path'));
+      if (!target) return json(404, { error: 'That project is not running on this Mac' });
+      try {
+        const { bounds, screen } = await openWindow(target, log);
+        windowSince = Date.now();
+        return json(200, { crop: { x: bounds.left / screen.width, y: bounds.top / screen.height, w: bounds.width / screen.width, h: bounds.height / screen.height } });
+      } catch (e) { return json(500, { error: `Mac view: ${e.message}` }); }
+    }
     if (url.pathname === '/desktop' && loadConfig().desktop) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
     if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
     const m = url.pathname.match(/^\/log\/([^/]+)$/);
@@ -145,7 +164,7 @@ server.on('upgrade', async (req, socket, head) => {
 
 // Hold the Mac awake while anything is running; let it sleep when nothing is. caffeinate covers an open lid;
 // away mode (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
-let awake = null, running = false;
+let awake = null, running = false, windowSince = 0;
 const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
 const checkNetwork = failover(log);
 async function tick() {
@@ -158,6 +177,9 @@ async function tick() {
     : { mode: 'sleeps normally', why: 'away mode off (seer away on)' };
   if (next.mode !== away.mode || next.why !== away.why) log(`away mode: ${next.mode} (${next.why})`);
   away = next;
+  // The Mac view's window closes two minutes after the last viewer of the stream has gone.
+  if (windowOpen() && viewerCount() > 0) windowSince = Date.now();
+  if (windowOpen() && viewerCount() === 0 && Date.now() - windowSince > 120_000) closeWindow(log);
 }
 setInterval(tick, 15_000);
 setInterval(() => checkNetwork(running && !!loadConfig().away).catch(e => log(`failover: ${e.message}`)), 5_000);
