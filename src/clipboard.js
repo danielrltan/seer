@@ -6,12 +6,17 @@
 import { spawn } from 'node:child_process';
 
 const MAX = 100_000;                                       // characters; a bigger copy is not sent
+// It stops by itself once Seer is gone (its parent becomes launchd), so a daemon that died or was restarted
+// mid-stream never leaves one polling.
 const WATCH = `
 ObjC.import('AppKit');
+ObjC.import('stdlib');
+ObjC.import('unistd');
 const pb = $.NSPasteboard.generalPasteboard;
 let last = pb.changeCount;
 for (;;) {
   delay(0.4);
+  if ($.getppid() === 1) $.exit(0);
   const n = pb.changeCount;
   if (n === last) continue;
   last = n;

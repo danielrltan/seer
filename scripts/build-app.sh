@@ -11,7 +11,7 @@ OUT="build/Seer.app"
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources/bin" "$OUT/Contents/Resources/seer"
 
-swiftc -O -target arm64-apple-macos14.0 -o "$OUT/Contents/MacOS/Seer" src/app/*.swift
+swiftc -O -target arm64-apple-macos14.0 -import-objc-header src/app/CGVirtualDisplayPrivate.h -o "$OUT/Contents/MacOS/Seer" src/app/*.swift
 
 lipo "$(readlink -f "$(command -v node)")" -thin arm64 -output "$OUT/Contents/Resources/bin/node" 2>/dev/null \
   || cp "$(readlink -f "$(command -v node)")" "$OUT/Contents/Resources/bin/node"

@@ -143,6 +143,65 @@ final class Encoder {
     }
 }
 
+// ---------- a screen for a closed lid ----------
+// With the lid closed and no monitor attached, macOS has no active display and there is nothing to capture. Seer
+// then adds a virtual one the size of the built-in screen (CoreGraphics' private CGVirtualDisplay, as DeskPad and
+// BetterDisplay do): the Mac lays its windows out on it and the stream shows it. It lives only in this process,
+// so it goes when Seer does; it is removed 20 s after the stream stops, and as soon as a real display is back
+// (the lid opened, a monitor plugged in). If a later macOS drops the classes, capture says there is no screen.
+enum VirtualScreen {
+    private static var display: AnyObject?
+    private static var removal: DispatchWorkItem?
+    static var id: CGDirectDisplayID? { (display as? CGVirtualDisplay)?.displayID }
+
+    static func activeDisplays() -> [CGDirectDisplayID] {
+        var n: UInt32 = 0; CGGetActiveDisplayList(0, nil, &n)
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(n)); CGGetActiveDisplayList(n, &ids, &n)
+        return Array(ids.prefix(Int(n)))
+    }
+    static var realDisplayActive: Bool { activeDisplays().contains { $0 != id } }
+
+    // Called on the main queue. true once a virtual screen exists.
+    static func ensure() -> Bool {
+        removal?.cancel(); removal = nil
+        if display != nil { return true }
+        guard NSClassFromString("CGVirtualDisplay") != nil else { return false }
+        let main = CGDisplayBounds(CGMainDisplayID())
+        let w = main.width >= 640 ? Int(main.width) : 1512, h = main.height >= 400 ? Int(main.height) : 982
+        let d = CGVirtualDisplayDescriptor()
+        d.setDispatchQueue(DispatchQueue.main)
+        d.name = "Seer"
+        d.maxPixelsWide = UInt32(w * 2); d.maxPixelsHigh = UInt32(h * 2)
+        d.sizeInMillimeters = CGSize(width: Double(w) * 0.2, height: Double(h) * 0.2)
+        d.vendorID = 0x5EE2; d.productID = 0x5EE2; d.serialNum = 1
+        d.terminationHandler = { _, _ in DispatchQueue.main.async { display = nil } }
+        let v = CGVirtualDisplay(descriptor: d)
+        let s = CGVirtualDisplaySettings()
+        s.hiDPI = 1
+        s.modes = [CGVirtualDisplayMode(width: UInt(w), height: UInt(h), refreshRate: 60)]
+        guard v.apply(s) else { return false }
+        display = v
+        logLine("virtual screen \(w)x\(h) added (lid closed, no display)")
+        return true
+    }
+    // While streaming it: once a real display is back, drop it and stream that one instead.
+    private static var watcher: Timer?
+    static func watch() {
+        watcher?.invalidate()
+        watcher = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { t in
+            guard display != nil else { t.invalidate(); watcher = nil; return }
+            if realDisplayActive { t.invalidate(); watcher = nil; Task { await capture.restart() } }
+        }
+    }
+    static func remove(after seconds: Double) {
+        guard display != nil else { return }
+        removal?.cancel()
+        let item = DispatchWorkItem { display = nil; removal = nil; logLine("virtual screen removed") }
+        removal = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: item)
+    }
+}
+
 // ---------- capture ----------
 final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     private var stream: SCStream?
@@ -152,14 +211,36 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var running = false
     private var cursorTimer: DispatchSourceTimer?
     private var lastCursor = CGPoint(x: -1, y: -1)
+    private var params: (Int, Int, Int)?
+    // Capture again as it was (the lid opened while streaming the virtual screen: the real one takes over).
+    func restart() async { if let p = params, running { await start(maxWidth: p.0, fps: p.1, bitrate: p.2) } }
 
     func start(maxWidth: Int, fps: Int, bitrate: Int) async {
         await stop()
         do {
+            // No display at all (lid closed, no monitor): add the virtual screen and give macOS a moment to use it.
+            // A real display back: the virtual one goes.
+            let had = await MainActor.run { VirtualScreen.id != nil }
+            if !VirtualScreen.realDisplayActive {
+                let ok = await MainActor.run { VirtualScreen.ensure() }   // also keeps one that was about to go
+                if ok && !had { try? await Task.sleep(nanoseconds: 1_500_000_000) }
+            } else if had {
+                await MainActor.run { VirtualScreen.remove(after: 0) }
+                try? await Task.sleep(nanoseconds: 800_000_000)
+            }
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
+            let virt = VirtualScreen.id
+            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() && $0.displayID != virt })
+                    ?? content.displays.first(where: { $0.displayID != virt }) ?? content.displays.first else {
                 link.status(["error": "no display to capture"]); return
             }
+            Input.screen = display.displayID
+            // The pointer may be on no live display (the lid's screen is off): bring it to the middle of this one.
+            if let p = CGEvent(source: nil)?.location, !CGDisplayBounds(display.displayID).contains(p) {
+                let b = CGDisplayBounds(display.displayID); CGWarpMouseCursorPosition(CGPoint(x: b.midX, y: b.midY))
+            }
+            params = (maxWidth, fps, bitrate)
+            if display.displayID == VirtualScreen.id { await MainActor.run { VirtualScreen.watch() } }
             let scale = min(1.0, Double(maxWidth) / Double(display.width))
             let w = Int(Double(display.width) * scale) & ~1, h = Int(Double(display.height) * scale) & ~1
             guard let enc = Encoder(width: w, height: h, fps: fps, bitrate: bitrate) else { link.status(["error": "H.264 encoder unavailable"]); return }
@@ -185,6 +266,7 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     func stop() async {
         let s: SCStream? = queue.sync { let s = stream; stream = nil; encoder = nil; lastFrame = nil; running = false; stopCursor(); return s }
         if let s { try? await s.stopCapture(); logLine("capture stopped") }
+        await MainActor.run { VirtualScreen.remove(after: 20) }   // a quick reconnect keeps it (and the window layout)
     }
 
     // A new viewer needs a keyframe now; a still screen sends no new frames, so the last one is encoded again.
@@ -271,9 +353,10 @@ enum Focus {
 enum Input {
     static var lastClick = (time: Date.distantPast, x: 0.0, y: 0.0, count: 0)
     static var buttonDown = false
+    static var screen: CGDirectDisplayID = CGMainDisplayID()            // the display being streamed
 
     static func point(_ j: [String: Any]) -> CGPoint {
-        let b = CGDisplayBounds(CGMainDisplayID())
+        let b = CGDisplayBounds(screen)
         let x = min(max((j["x"] as? Double) ?? 0, 0), 1), y = min(max((j["y"] as? Double) ?? 0, 0), 1)
         return CGPoint(x: b.minX + x * b.width, y: b.minY + y * b.height)
     }
@@ -582,7 +665,7 @@ enum Pad {
     // to another would vanish from the phone. (Moved there some other way, it stays on that one.)
     static func clamp(_ p: CGPoint, from: CGPoint) -> CGPoint {
         var id: CGDirectDisplayID = 0, n: UInt32 = 0
-        let b = CGGetDisplaysWithPoint(from, 1, &id, &n) == .success && n > 0 ? CGDisplayBounds(id) : CGDisplayBounds(CGMainDisplayID())
+        let b = CGGetDisplaysWithPoint(from, 1, &id, &n) == .success && n > 0 ? CGDisplayBounds(id) : CGDisplayBounds(Input.screen)
         return CGPoint(x: min(max(p.x, b.minX), b.maxX - 1), y: min(max(p.y, b.minY), b.maxY - 1))
     }
 
