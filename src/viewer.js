@@ -178,11 +178,11 @@ const withMods = o => { if (mods.size) o.mods = [...mods]; return o; };
 function clearMods() { if (!mods.size) return; mods.clear(); document.querySelectorAll('[data-mod]').forEach(b => b.classList.remove('on')); }
 
 // ---------- touch ----------
-// One finger, like any phone page: swipe = scroll (the page under the finger, with momentum), tap = click,
-// double tap = double click, tap then touch again and drag = mouse drag (select, move things, as a laptop
-// trackpad's tap-and-drag), hold still = right click.
-// Two fingers: pinch = zoom the view, move while zoomed = pan it, move unzoomed = scroll. The kind of gesture
-// is decided once, from its first clear movement, and kept until the fingers lift.
+// One finger: drag = move the cursor under the finger (no click: hover effects and cursor trails follow it),
+// tap = click, double tap = double click, tap then touch again and drag = mouse drag (select, move things, as a
+// laptop trackpad's tap-and-drag), hold still = right click.
+// Two fingers: drag = scroll (with momentum on a flick; while zoomed in it moves the zoomed view first),
+// pinch = zoom the view. The kind of gesture is decided once, from its first clear movement.
 let one = null, two = null, holdTimer = null, glide = null, lastTap = { t: 0, x: 0, y: 0 };
 const scale = () => { const r = canvas.getBoundingClientRect(); return r.width ? canvas.width / r.width : 1; };   // screen px -> remote px
 const scrollBy = (dx, dy) => { const k = scale(); send({ t: 'scroll', dx: Math.round(dx * k), dy: Math.round(dy * k) }); };
@@ -229,7 +229,7 @@ stage.addEventListener('touchstart', e => {
     one = null;
     const [a, b] = e.touches;
     const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
-    two = { d0: d, cx0: cx, cy0: cy, d, cx, cy, mode: null };
+    two = { d0: d, cx0: cx, cy0: cy, d, cx, cy, mode: null, tm: performance.now(), vx: 0, vy: 0 };
     send({ t: 'move', ...toRemote(cx, cy) });        // scroll lands on what is between the fingers
   }
 }, { passive: false });
@@ -242,13 +242,9 @@ stage.addEventListener('touchmove', e => {
       clearTimeout(holdTimer);
       const p = toRemote(one.x0, one.y0);
       send({ t: 'move', ...p });                     // the pointer goes under the finger: scroll and drag act there
-      if (one.afterTap) { one.mode = 'drag'; send(withMods({ t: 'down', ...p })); } else one.mode = 'scroll';
+      if (one.afterTap) { one.mode = 'drag'; send(withMods({ t: 'down', ...p })); } else one.mode = 'hover';
     }
-    if (one.mode === 'scroll') {
-      const dx = t.clientX - one.x, dy = t.clientY - one.y, dt = Math.max(1, now - one.tm);
-      swipeBy(dx, dy);
-      one.vx = 0.6 * one.vx + 0.4 * (dx / dt); one.vy = 0.6 * one.vy + 0.4 * (dy / dt);
-    } else if (one.mode === 'drag') send({ t: 'move', ...toRemote(t.clientX, t.clientY) });
+    if (one.mode === 'hover' || one.mode === 'drag') send({ t: 'move', ...toRemote(t.clientX, t.clientY) });
     one.x = t.clientX; one.y = t.clientY; one.tm = now;
   } else if (two && e.touches.length === 2) {
     const [a, b] = e.touches;
@@ -256,15 +252,18 @@ stage.addEventListener('touchmove', e => {
     if (!two.mode) {
       const spread = Math.abs(d - two.d0), moved = Math.hypot(cx - two.cx0, cy - two.cy0);
       if (spread > 24 && spread > moved) two.mode = 'zoom';
-      else if (moved > 12) two.mode = zoom > 1.01 ? 'pan' : 'scroll';
+      else if (moved > 8) two.mode = 'scroll';
     }
     if (two.mode === 'zoom') {
       const sr = stage.getBoundingClientRect(), nz = Math.min(6, Math.max(1, zoom * (d / two.d)));
       const px = cx - sr.left, py = cy - sr.top;                       // keep the point under the fingers still
       panX = px - (px - panX) * (nz / zoom) + (cx - two.cx); panY = py - (py - panY) * (nz / zoom) + (cy - two.cy);
       zoom = nz; applyView();
-    } else if (two.mode === 'pan') swipeBy(cx - two.cx, cy - two.cy);
-    else if (two.mode === 'scroll') scrollBy(cx - two.cx, cy - two.cy);
+    } else if (two.mode === 'scroll') {
+      const now = performance.now(), dt = Math.max(1, now - two.tm), dx = cx - two.cx, dy = cy - two.cy;
+      swipeBy(dx, dy);                               // while zoomed in: the zoomed view first, then the page
+      two.vx = 0.6 * two.vx + 0.4 * (dx / dt); two.vy = 0.6 * two.vy + 0.4 * (dy / dt); two.tm = now;
+    }
     Object.assign(two, { d, cx, cy });
   }
 }, { passive: false });
@@ -274,7 +273,6 @@ stage.addEventListener('touchend', e => {
   clearTimeout(holdTimer);
   if (one && !e.touches.length) {
     if (one.mode === 'drag') send({ t: 'up', ...toRemote(one.x, one.y) });
-    else if (one.mode === 'scroll') { if (performance.now() - one.tm < 80) startGlide(one.vx, one.vy); }
     else if (!one.mode && Date.now() - one.t0 < 650) {
       // The second tap of a double tap lands exactly on the first: the Mac counts a double click only when close.
       const p = one.afterTap ? toRemote(lastTap.x, lastTap.y) : toRemote(one.x0, one.y0);
@@ -284,7 +282,10 @@ stage.addEventListener('touchend', e => {
     }
     clearMods(); one = null;
   }
-  if (e.touches.length < 2) two = null;
+  if (two && e.touches.length < 2) {
+    if (two.mode === 'scroll' && performance.now() - two.tm < 80) startGlide(two.vx, two.vy);   // flick
+    two = null;
+  }
 }, { passive: false });
 
 // ---------- mouse (testing from a computer) ----------
