@@ -106,7 +106,7 @@ export async function restoreDock() {
 // ---------- viewers ----------
 const INPUT = new Set(['down', 'up', 'move', 'scroll', 'text', 'key']);
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-function cleanInput(m) {
+export function cleanInput(m) {
   if (!INPUT.has(m.t)) return null;
   const out = { cmd: 'input', t: m.t };
   if ('x' in m) { out.x = Math.min(Math.max(num(m.x), 0), 1); out.y = Math.min(Math.max(num(m.y), 0), 1); }
@@ -118,21 +118,27 @@ function cleanInput(m) {
   return out;
 }
 
-export function attachStream(server, log) {
+// Who may open a viewer socket (desktop stream or Mac view): the home page's own origin, with a valid Access
+// token. Returns the signed-in email, or null after answering 403.
+export async function authorizeViewer(req, socket, log, what) {
+  const deny = why => { log(`${what} refused: ${why}`); socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return null; };
+  const cfg = loadConfig(), origin = req.headers.origin || '';
+  if (DEV && req.socket.remoteAddress === '127.0.0.1' && !req.headers['cf-connecting-ip']) return 'local dev';
+  if (origin !== `https://seer.${cfg.zone}`) return deny(`origin ${origin || 'none'}`);
+  const who = await verifyAccess(req.headers['cf-access-jwt-assertion'], cfg).catch(() => null);
+  return who || deny('no valid Access token');
+}
+
+export function initStream(log) {
   connectHelper(log);
   restoreDock();                                                                  // a crash left it shown
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
-  server.on('upgrade', async (req, socket, head) => {
-    const deny = why => { log(`desktop refused: ${why}`); socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); };
-    if (!req.url.startsWith('/desktop/ws')) return deny('path');
-    const cfg = loadConfig(), origin = req.headers.origin || '';
-    const local = DEV && req.socket.remoteAddress === '127.0.0.1' && !req.headers['cf-connecting-ip'];
-    if (!local) {
-      if (origin !== `https://seer.${cfg.zone}`) return deny(`origin ${origin || 'none'}`);
-      const who = await verifyAccess(req.headers['cf-access-jwt-assertion'], cfg).catch(() => null);
-      if (!who) return deny('no valid Access token');
-      req.who = who;
-    } else req.who = 'local dev';
+}
+
+const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+export async function streamUpgrade(req, socket, head, log) {
+  {
+    req.who = await authorizeViewer(req, socket, log, 'desktop');
+    if (!req.who) return;
     wss.handleUpgrade(req, socket, head, ws => {
       log(`desktop viewer connected (${req.who}); ${viewers.size + 1} watching`);
       viewers.add(ws);
@@ -153,5 +159,5 @@ export function attachStream(server, log) {
         if (!viewers.size) { toHelper({ cmd: 'stop' }); lastConfig = null; restoreDock(); }
       });
     });
-  });
+  }
 }

@@ -28,7 +28,9 @@ export default {
     let desktop = !!mode, reset = false;
     const lite = /(?:^|;\s*)seer_lite=1/.test(cookieHeader);
     if (desktop && dest === 'document') { desktop = false; reset = true; }   // opened directly: back to phone view
-    if (url.pathname === '/__seer/desktop') return desktopFrame(url.searchParams.get('path'), mode, lite);
+    // Mac: the project rendered by the Mac's own browser and streamed (Seer home's /render), for live Mac links.
+    const macView = route.mac ? `https://seer.${url.hostname.split('.').slice(1).join('.')}/render?host=${encodeURIComponent(url.hostname)}` : null;
+    if (url.pathname === '/__seer/desktop') return desktopFrame(url.searchParams.get('path'), mode, lite, macView);
     if (url.pathname === '/__seer/phone') return redirectClearing(safePath(url.searchParams.get('path')));
 
     const target = route.mac ? new URL(request.url) : new URL(url.pathname + url.search, `https://${route.app}.fly.dev`);
@@ -68,7 +70,7 @@ function redirectClearing(path) {
 }
 
 // The frame page: the project at 1440 px wide, scaled to the phone's width; pinch to zoom; Phone to go back.
-function desktopFrame(rawPath, mode, lite) {
+function desktopFrame(rawPath, mode, lite, macView) {
   const path = safePath(rawPath);
   const html = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -81,7 +83,7 @@ html,body{margin:0;height:100%;background:#000;overflow:auto}
 #bar button.on{color:#ededed;border-color:#00e676}
 </style></head><body>
 <iframe id="f"></iframe>
-<div id="bar"><button id="laptop">Laptop</button><button id="tablet">iPad</button><button id="phone">Phone</button></div>
+<div id="bar">${macView ? '<button id="mac">Mac</button>' : ''}<button id="laptop">Laptop</button><button id="tablet">iPad</button><button id="phone">Phone</button></div>
 <script>
 const f = document.getElementById('f');
 const setCookie = (k, v) => { document.cookie = k + '=' + v + '; Path=/; Secure; SameSite=Lax'; };
@@ -106,6 +108,8 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 document.getElementById('phone').onclick = () => { location.href = '/__seer/phone?path=' + encodeURIComponent(here()); };
+const macBtn = document.getElementById('mac');
+if (macBtn) macBtn.onclick = () => { location.href = ${JSON.stringify(macView || '')} + '&path=' + encodeURIComponent(here()); };
 </script></body></html>`;
   return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 }

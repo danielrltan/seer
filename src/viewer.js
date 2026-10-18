@@ -1,10 +1,11 @@
 // The desktop viewer page (/desktop): decodes the H.264 stream with WebCodecs onto a canvas and turns touch into
 // mouse and keyboard. One finger: tap = click, hold = right click, drag = drag. Two fingers: pinch = zoom,
 // move = pan when zoomed, otherwise scroll. The keyboard button opens the phone's keyboard and a key bar.
-export function desktopPage() {
+// opts: wsPath (the socket; the page's own query string is passed on), dock (the Dock button), title.
+export function desktopPage({ wsPath = '/desktop/ws', dock = true, title = 'Seer' } = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>Seer</title>
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>${title}</title>
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials"><link rel="apple-touch-icon" href="/icon-180.png">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Seer"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
@@ -51,7 +52,7 @@ body.kb-up.keys-open #stage{bottom:50px}
 </style></head><body>
 <div id="app">
 <div id="bar"><a href="/" aria-label="Back">&larr;</a><span id="dot"></span><span id="msg">Connecting</span>
-<button id="kb" aria-label="Keyboard">&#9000;</button><button id="dock" aria-label="Show the Dock">Dock</button><button id="fit" aria-label="Fit to screen">1:1</button></div>
+<button id="kb" aria-label="Keyboard">&#9000;</button>${dock ? '<button id="dock" aria-label="Show the Dock">Dock</button>' : ''}<button id="fit" aria-label="Fit to screen">1:1</button></div>
 <div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div></div>
 <div id="keys">
 <button data-mod="cmd">&#8984;</button><button data-mod="alt">&#8997;</button><button data-mod="ctrl">&#8963;</button><button data-mod="shift">&#8679;</button>
@@ -66,6 +67,15 @@ const $ = id => document.getElementById(id);
 const canvas = $('screen'), ctx = canvas.getContext('2d'), wrap = $('wrap'), stage = $('stage');
 const status = (text, cls) => { $('msg').textContent = text; $('dot').className = cls || ''; };
 let ws, decoder, configured = false, waitingKey = true, mods = new Set();
+let drawing = false, pendingJpeg = null;
+function drawJpeg(buf) {
+  drawing = true;
+  createImageBitmap(new Blob([buf.subarray(1)], { type: 'image/jpeg' })).then(bmp => {
+    if (canvas.width !== bmp.width || canvas.height !== bmp.height) { canvas.width = bmp.width; canvas.height = bmp.height; fit(); }
+    ctx.drawImage(bmp, 0, 0); bmp.close();
+    if ($('dot').className !== 'live') status('Live', 'live');
+  }).catch(() => {}).finally(() => { drawing = false; if (pendingJpeg) { const next = pendingJpeg; pendingJpeg = null; drawJpeg(next); } });
+}
 
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
@@ -84,18 +94,23 @@ function makeDecoder(cfg) {
 
 function connect() {
   status('Connecting', '');
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/desktop/ws');
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ${JSON.stringify(wsPath)} + location.search);
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => status('Waiting for the first frame', '');
   ws.onmessage = ev => {
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
       if (m.error) status(m.error, 'fail');
-      if ('dock' in m) $('dock').classList.toggle('on', m.dock);
+      if ('dock' in m && $('dock')) $('dock').classList.toggle('on', m.dock);
       if ('textFocus' in m) textFocus(m.textFocus);
       return;
     }
     const buf = new Uint8Array(ev.data), type = buf[0];
+    if (type === 5) {                        // a whole JPEG frame (the Mac view): draw the newest, skip any that queue behind
+      if (drawing) { pendingJpeg = buf; return; }
+      drawJpeg(buf);
+      return;
+    }
     if (type === 1) {
       const jl = (buf[1] << 8) | buf[2], cfg = JSON.parse(new TextDecoder().decode(buf.subarray(3, 3 + jl)));
       cfg.avcc = buf.slice(3 + jl);
@@ -223,7 +238,7 @@ canvas.addEventListener('mousemove', e => send({ t: 'move', ...toRemote(e.client
 canvas.addEventListener('wheel', e => { e.preventDefault(); send({ t: 'scroll', dx: -Math.round(e.deltaX), dy: -Math.round(e.deltaY) }); }, { passive: false });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-$('dock').onclick = () => send({ t: 'dock' });
+if ($('dock')) $('dock').onclick = () => send({ t: 'dock' });
 
 // ---------- keyboard ----------
 // iOS opens the keyboard only inside a tap, and the Mac says "a text field has focus" a moment after the tap.

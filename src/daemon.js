@@ -9,7 +9,9 @@ import { tail } from './devserver.js';
 import { cleanName, loadConfig } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover } from './awake.js';
-import { attachStream } from './stream.js';
+import { initStream, streamUpgrade, authorizeViewer, cleanInput } from './stream.js';
+import { localTarget, openSession, input as renderInput, closeSession } from './render.js';
+import { WebSocketServer } from 'ws';
 import { desktopPage } from './viewer.js';
 import { ensureStreamAuth } from './core.js';
 
@@ -102,6 +104,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' });
       return res.end(fs.readFileSync(new URL(`../assets/icon-${icon[1]}.png`, import.meta.url)));
     }
+    if (url.pathname === '/render') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage({ wsPath: '/render/ws', dock: false, title: 'Mac view' })); }
     if (url.pathname === '/desktop' && loadConfig().desktop) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
     if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
     const m = url.pathname.match(/^\/log\/([^/]+)$/);
@@ -114,11 +117,31 @@ const server = http.createServer(async (req, res) => {
     res.end('Seer home failed: ' + e.message);
   }
 }).listen(HOME_PORT, '127.0.0.1', () => console.log(`seer home on 127.0.0.1:${HOME_PORT}`));
-// Parked, opt-in (`seer desktop on`): the remote desktop. Off, nothing listens for a viewer and the upgrade is refused.
-if (loadConfig().desktop) {
-  attachStream(server, msg => log(msg));
-  ensureStreamAuth().then(() => log('desktop stream: Access token check ready')).catch(e => log(`desktop stream: ${e.message}`));
-} else server.on('upgrade', (req, socket) => socket.destroy());
+// Viewer sockets, each behind the Access check in authorizeViewer: /render/ws, the Mac view of a live project
+// (render.js); /desktop/ws, the parked remote desktop, only when it is turned on (`seer desktop on`).
+if (loadConfig().desktop) initStream(msg => log(msg));
+ensureStreamAuth().then(() => log('viewer sockets: Access token check ready')).catch(e => log(`viewer sockets: ${e.message}`));
+const renderWss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+server.on('upgrade', async (req, socket, head) => {
+  const pathname = req.url.split('?')[0];
+  if (pathname === '/desktop/ws' && loadConfig().desktop) return streamUpgrade(req, socket, head, msg => log(msg));
+  if (pathname !== '/render/ws') return socket.destroy();
+  if (!(await authorizeViewer(req, socket, msg => log(msg), 'mac view'))) return;
+  const q = new URL(req.url, 'http://x').searchParams, target = localTarget(q.get('host'), q.get('path'));
+  renderWss.handleUpgrade(req, socket, head, async ws => {
+    if (!target) { ws.send(JSON.stringify({ error: 'That project is not running on this Mac' })); return ws.close(); }
+    let session;
+    try { session = await openSession(ws, target, msg => log(msg)); }
+    catch (e) { ws.send(JSON.stringify({ error: `Mac view: ${e.message}` })); return ws.close(); }
+    ws.on('message', (data, binary) => {
+      if (binary) return;
+      let m; try { m = JSON.parse(String(data)); } catch { return; }
+      const clean = cleanInput(m);
+      if (clean) renderInput(session, clean).catch(() => {});
+    });
+    ws.on('close', () => closeSession(session, msg => log(msg)));
+  });
+});
 
 // Hold the Mac awake while anything is running; let it sleep when nothing is. caffeinate covers an open lid;
 // away mode (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
