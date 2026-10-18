@@ -118,17 +118,22 @@ export async function joinHotspot() {
 
 // Offline for 20 s while away mode wants the Mac up: try the hotspot, then again after 5, 10, 20, 30, 30... s.
 const BACKOFF = [5, 10, 20, 30];
+// What the failover is doing, for Seer home: offline since when, and the last hotspot attempt.
+export const netState = { downSince: null, joining: false, lastJoin: null };
 export function failover(log) {
   let downSince = null, tries = 0, nextAt = 0;
   return async function check(active) {
-    if (!active || !loadConfig().hotspotSsid) { downSince = null; return; }
+    if (!active || !loadConfig().hotspotSsid) { downSince = null; netState.downSince = null; return; }
     if (await online()) {
       if (downSince) log(`back online after ${Math.round((Date.now() - downSince) / 1000)} s`);
-      downSince = null; tries = 0; return;
+      downSince = null; tries = 0; netState.downSince = null; return;
     }
     downSince ??= Date.now();
+    netState.downSince = downSince;
     if (Date.now() - downSince < 20_000 || Date.now() < nextAt) return;
+    netState.joining = true;
     const result = await joinHotspot();
+    netState.joining = false; netState.lastJoin = { at: Date.now(), result };
     log(`offline ${Math.round((Date.now() - downSince) / 1000)} s; hotspot join: ${result}`);
     nextAt = Date.now() + BACKOFF[Math.min(tries++, BACKOFF.length - 1)] * 1000;
   };

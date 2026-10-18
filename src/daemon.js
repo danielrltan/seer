@@ -10,6 +10,7 @@ import { cleanName, loadConfig } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover, battery } from './awake.js';
 import { awakeReason, seen } from './activity.js';
+import { macStatus } from './macstatus.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
 import { WebSocketServer } from 'ws';
@@ -21,8 +22,8 @@ let away = { mode: 'starting' };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 const STYLE = `
-:root{--bg:#000;--surface:#0a0a0a;--border:#262626;--text:#ededed;--quiet:#a1a1a1;--live:#00e676;--fail:#ff4d4f;--wait:#f5a524;--off:#525252}
-@media (prefers-color-scheme: light){:root{--bg:#fff;--surface:#fafafa;--border:#eaeaea;--text:#171717;--quiet:#666;--off:#a3a3a3}}
+:root{--bg:#000;--surface:#0a0a0a;--border:#262626;--text:#ededed;--quiet:#a1a1a1;--live:#00e676;--live-text:#00e676;--fail:#ff4d4f;--wait:#f5a524;--wait-text:#f5a524;--off:#525252}
+@media (prefers-color-scheme: light){:root{--bg:#fff;--surface:#fafafa;--border:#eaeaea;--text:#171717;--quiet:#666;--off:#a3a3a3;--live-text:#0f7d3e;--wait-text:#b26a00}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 Geist,-apple-system,system-ui,sans-serif}
 main{max-width:640px;margin:0 auto;padding:20px 16px 48px}
 header{display:flex;align-items:center;gap:10px;padding:4px 0 20px}
@@ -35,6 +36,21 @@ a{color:inherit;text-decoration:none}
 .meta{color:var(--quiet);font-size:13px;margin-left:auto;white-space:nowrap}
 .empty{color:var(--quiet);padding:24px 0}
 .foot{color:var(--quiet);font-size:13px;margin-top:20px}
+.label{color:var(--quiet);font-size:13px;margin:22px 2px 8px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;min-height:84px}
+.tile.wide{grid-column:1 / -1;min-height:0;display:flex;align-items:center;gap:12px}
+.tile .k{color:var(--quiet);font-size:12px}
+.tile .v{font-size:22px;font-weight:600;letter-spacing:-.01em;margin-top:4px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.tile .s{color:var(--quiet);font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.wide .v{font-size:15px;margin:0}.tile.wide .s{margin:0}
+.ok{color:var(--live-text)}.warn{color:var(--wait-text)}.bad{color:var(--fail)}
+.batt{width:26px;height:13px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.9}
+.batt i{position:absolute;left:1.5px;top:1.5px;bottom:1.5px;border-radius:1px;background:currentColor}
+.batt:after{content:'';position:absolute;right:-4px;top:3px;width:2px;height:4px;background:currentColor;border-radius:0 1px 1px 0}
+.bars{display:inline-flex;align-items:flex-end;gap:2px;height:13px}.bars i{width:3px;background:var(--off);border-radius:1px}.bars i.on{background:currentColor}
+.help{margin-top:8px;padding:12px 14px;border:1px solid var(--wait);border-radius:8px;color:var(--text);font-size:14px}
+.help+.help{margin-top:6px}
 pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;font:12px/1.5 'Geist Mono',ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}
 `;
 const EYE = `<svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true"><path d="M1 7C4 2 7.5 1 11 1s7 1 10 6c-3 5-6.5 6-10 6S4 12 1 7Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="7" r="2.6" fill="#00e676"/></svg>`;
@@ -50,17 +66,70 @@ ${APP_HEAD}
 <style>${STYLE}</style></head><body><main><header>${EYE}<b>Seer</b></header>${body}</main></body></html>`;
 }
 
+// Seer home: the Mac's status (battery, ping, network, lid, awake and why, anything that needs you), refreshed
+// every 5 s from /status.json, with the ping timed from the phone itself, then the projects.
+async function projects() {
+  const out = (await list()).map(p => ({ name: p.name, href: p.state === 'running' ? p.url : `/log/${encodeURIComponent(p.name)}`, state: p.state, where: 'mac' }));
+  for (const [name, c] of Object.entries(loadConfig().cloud || {})) if (c.link) out.push({ name, href: c.link, state: 'cloud', where: 'cloud' });
+  return out;
+}
+export async function statusJson() {
+  const st = await macStatus({ awake: { awake: why.awake, why: why.why, mode: away.mode }, agentsBusy: why.agentsBusy || 0 });
+  return { ...st, projects: await projects(), desktop: !!loadConfig().desktop };
+}
+
 async function home() {
-  const items = await list();
-  const b = away.battery;
-  const foot = `<p class="foot">Mac: ${esc(away.mode)}${b ? ` · ${b.onBattery ? `battery ${b.pct}%` : 'plugged in'}` : ''}</p>`;
-  const desktop = !loadConfig().desktop ? '' : `<a class="row running" href="/desktop"><span class="dot"></span><span class="name">desktop</span><span class="meta">streamed</span></a>`;
-  if (!items.length) return page('Seer', desktop + foot);
-  const rows = desktop + items.map(p => {
-    const href = p.state === 'running' ? p.url : `/log/${encodeURIComponent(p.name)}`;
-    return `<a class="row ${esc(p.state.replace(/\s+/g, '-'))}" href="${esc(href)}"><span class="dot"></span><span class="name">${esc(p.name)}</span><span class="meta">${esc(p.state)}</span></a>`;
-  }).join('');
-  return page('Seer', rows + foot);
+  const initial = JSON.stringify(await statusJson()).replace(/</g, '\\u003c');
+  return page('Seer', `<div class="label">mac</div>
+<div class="grid">
+  <div class="tile"><div class="k">battery</div><div class="v" id="batt"></div><div class="s" id="batt-s"></div></div>
+  <div class="tile"><div class="k">ping</div><div class="v" id="ping">…</div><div class="s">phone to Mac</div></div>
+  <div class="tile"><div class="k">network</div><div class="v" id="net"></div><div class="s" id="net-s"></div></div>
+  <div class="tile"><div class="k">lid</div><div class="v" id="lid"></div><div class="s" id="lid-s"></div></div>
+  <div class="tile wide"><span class="dot" id="awake-dot"></span><div><div class="v" id="awake"></div><div class="s" id="awake-s"></div></div></div>
+</div>
+<div id="help"></div>
+<div class="label">projects</div>
+<div id="projects"></div>
+<script>
+const $ = id => document.getElementById(id), esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+function render(st) {
+  const b = st.battery, low = !b.pluggedIn && b.pct <= 20;
+  $('batt').className = 'v ' + (low ? 'bad' : b.pluggedIn ? 'ok' : '');
+  $('batt').innerHTML = b.pct + '% <span class="batt"><i style="width:' + Math.max(2, Math.round(b.pct * 0.19)) + 'px"></i></span>';
+  $('batt-s').textContent = b.pluggedIn ? (b.state === 'charging' ? 'plugged in, charging' : 'plugged in') : (b.remaining ? b.remaining + ' left' : 'on battery');
+  const n = st.network, h = st.hotspot;
+  const bars = n.signal ? '<span class="bars">' + [6, 9, 12].map((ht, i) => '<i style="height:' + ht + 'px" class="' + (i < { strong: 3, good: 2, weak: 1, poor: 0 }[n.signal] ? 'on' : '') + '"></i>').join('') + '</span>' : '';
+  const names = { wifi: 'Wi-Fi', hotspot: 'Hotspot', wired: 'Wired', offline: 'Offline' };
+  $('net').className = 'v ' + (n.kind === 'offline' ? 'bad' : n.kind === 'hotspot' ? 'warn' : '');
+  $('net').innerHTML = esc(names[n.kind] || n.kind) + ' ' + bars;
+  $('net-s').textContent = n.kind === 'offline'
+    ? (h.joining ? 'joining ' + (h.name || 'hotspot') + '…' : h.offlineFor ? 'offline ' + h.offlineFor + ' s' + (h.lastJoin ? ', hotspot: ' + h.lastJoin.result : '') : 'no internet')
+    : n.kind === 'hotspot' ? (h.name || 'phone hotspot') + (n.internetMs != null ? ', ' + n.internetMs + ' ms out' : '')
+    : (n.ssid ? n.ssid + ', ' : '') + (n.txRate ? n.txRate + ' Mbps' : '') + (n.internetMs != null ? (n.txRate ? ', ' : '') + n.internetMs + ' ms out' : '');
+  $('lid').textContent = st.lid === 'unknown' ? '—' : st.lid === 'open' ? 'Open' : 'Closed';
+  $('lid-s').textContent = st.lid === 'closed' ? (st.awake.awake ? 'awake anyway' : 'will sleep') : '';
+  $('awake-dot').style.background = st.awake.awake ? 'var(--live)' : 'var(--off)';
+  $('awake').textContent = st.awake.awake ? 'Awake' : 'Will sleep';
+  $('awake-s').textContent = st.awake.why + (st.agentsBusy && !/agent/.test(st.awake.why) ? ', ' + st.agentsBusy + ' agent' + (st.agentsBusy > 1 ? 's' : '') + ' working' : '');
+  $('help').innerHTML = st.help.map(t => '<div class="help">' + esc(t) + '</div>').join('');
+  const rows = (st.desktop ? [{ name: 'desktop', href: '/desktop', state: 'streamed' }] : []).concat(st.projects);
+  $('projects').innerHTML = rows.length ? rows.map(p => '<a class="row ' + esc(p.state === 'cloud' || p.state === 'streamed' ? 'running' : String(p.state).replace(/\s+/g, '-')) + '" href="' + esc(p.href) + '"><span class="dot"></span><span class="name">' + esc(p.name) + '</span><span class="meta">' + esc(p.state) + '</span></a>').join('') : '<p class="empty">No previews running.</p>';
+}
+async function refresh() {
+  try {
+    // Ping: the round trip phone -> Cloudflare -> tunnel -> Mac and back, on an endpoint that does no work.
+    const t0 = performance.now();
+    await fetch('/ping', { cache: 'no-store' });
+    const ms = Math.round(performance.now() - t0);
+    $('ping').textContent = ms + ' ms'; $('ping').className = 'v ' + (ms < 120 ? 'ok' : ms < 300 ? 'warn' : 'bad');
+    render(await (await fetch('/status.json', { cache: 'no-store' })).json());
+  } catch { $('ping').textContent = 'lost'; $('ping').className = 'v bad'; }
+}
+render(${initial});
+refresh(); setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+</script>`);
 }
 
 // Can this browser decode the H.264 stream Streamed mode sends (WebCodecs)? Opened once from the phone.
@@ -130,6 +199,8 @@ const server = http.createServer(async (req, res) => {
       } catch (e) { return json(500, { error: `Mac view: ${e.message}` }); }
     }
     if (url.pathname === '/desktop' && loadConfig().desktop) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
+    if (url.pathname === '/ping') { res.writeHead(204, { 'cache-control': 'no-store' }); return res.end(); }
+    if (url.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(await statusJson())); }
     if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
     const m = url.pathname.match(/^\/log\/([^/]+)$/);
     const html = m ? logPage(cleanName(decodeURIComponent(m[1]))) : url.pathname === '/' ? await home() : null;

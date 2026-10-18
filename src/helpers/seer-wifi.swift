@@ -1,5 +1,6 @@
 // seer-wifi join <ssid>   (password on stdin, so it never shows in `ps`)
 // seer-wifi scan          (what the Mac can see: count, and names when macOS does not redact them)
+// seer-wifi status        (the current Wi-Fi link: signal, noise, rate)
 // Joins a Wi-Fi network through CoreWLAN: an SSID-filtered scan, then associate with the network it returns.
 // macOS 26 redacts SSIDs for tools without Location permission, but the filtered scan still returns the
 // network to associate with. iPhones name their hotspot with a curly apostrophe (Daniel’s iPhone) that a
@@ -10,6 +11,14 @@ import Foundation
 
 let args = CommandLine.arguments
 guard let interface = CWWiFiClient.shared().interface() else { print("error: no Wi-Fi interface"); exit(1) }
+
+// seer-wifi status: the Wi-Fi link as JSON (the network's name is redacted without Location permission).
+if args.count == 2, args[1] == "status" {
+    let o: [String: Any] = ["power": interface.powerOn(), "rssi": interface.rssiValue(), "noise": interface.noiseMeasurement(),
+                            "txRate": interface.transmitRate(), "ssid": interface.ssid() ?? NSNull()]
+    print(String(data: try! JSONSerialization.data(withJSONObject: o), encoding: .utf8)!)
+    exit(0)
+}
 
 if args.count == 2, args[1] == "scan" {
     do {
