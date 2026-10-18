@@ -81,12 +81,15 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
 .backdrop .tun{position:absolute;inset:0;-webkit-mask:radial-gradient(closest-side at 50% 46%,transparent 0,#000 80%);mask:radial-gradient(closest-side at 50% 46%,transparent 0,#000 80%)}
 .backdrop .fly{position:absolute;inset:0;transform-origin:50% 46%;animation:fly 9s linear infinite;will-change:transform}
 @keyframes fly{to{transform:scale(1.4286)}}
-.orb{position:absolute;border-radius:50%;filter:blur(48px);will-change:transform}
-.orb.a{width:70vw;height:70vw;left:-22vw;top:6vh;opacity:.5;background:radial-gradient(circle,#12c672,transparent 68%);animation:drift-a 22s ease-in-out infinite alternate}
-.orb.b{width:78vw;height:78vw;right:-30vw;top:44vh;opacity:.45;background:radial-gradient(circle,#0c8f86,transparent 68%);animation:drift-b 27s ease-in-out infinite alternate}
-.orb.c{width:50vw;height:50vw;left:22vw;top:78vh;opacity:.3;background:radial-gradient(circle,#2bf08a,transparent 68%);animation:drift-a 31s ease-in-out infinite alternate-reverse}
-@keyframes drift-a{to{transform:translate(18vw,-10vh) scale(1.15)}}
-@keyframes drift-b{to{transform:translate(-20vw,12vh) scale(.9)}}
+.orb{position:absolute;border-radius:50%;filter:blur(64px);will-change:transform}
+/* Softer glows on long, looping, unrelated paths (prime-ish durations so the three never fall into step); each
+   path is a closed loop through several points, so the motion keeps curving instead of going back and forth. */
+.orb.a{width:70vw;height:70vw;left:-22vw;top:6vh;opacity:.26;background:radial-gradient(circle,#12c672,transparent 68%);animation:path-a 41s ease-in-out infinite}
+.orb.b{width:78vw;height:78vw;right:-30vw;top:44vh;opacity:.22;background:radial-gradient(circle,#0c8f86,transparent 68%);animation:path-b 53s ease-in-out infinite}
+.orb.c{width:50vw;height:50vw;left:22vw;top:78vh;opacity:.15;background:radial-gradient(circle,#2bf08a,transparent 68%);animation:path-c 47s ease-in-out infinite}
+@keyframes path-a{0%,100%{transform:translate(0,0) scale(1)}25%{transform:translate(22vw,8vh) scale(1.12)}50%{transform:translate(34vw,-6vh) scale(.94)}75%{transform:translate(10vw,-12vh) scale(1.06)}}
+@keyframes path-b{0%,100%{transform:translate(0,0) scale(1)}20%{transform:translate(-14vw,-10vh) scale(.92)}45%{transform:translate(-30vw,4vh) scale(1.1)}70%{transform:translate(-12vw,14vh) scale(.96)}}
+@keyframes path-c{0%,100%{transform:translate(0,0) scale(1)}30%{transform:translate(-20vw,-14vh) scale(1.15)}55%{transform:translate(8vw,-24vh) scale(.9)}80%{transform:translate(16vw,-6vh) scale(1.05)}}
 .backdrop:after{content:'';position:absolute;inset:0;background:radial-gradient(130% 90% at 50% 46%,transparent 40%,rgba(0,0,0,.6) 100%)}
 @media (prefers-reduced-motion: reduce){.backdrop .fly,.orb,#pupil.spin{animation:none}}
 `;
