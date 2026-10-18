@@ -113,6 +113,7 @@ export const BTN = {
   cancel: ic('<path d="M7 7l10 10M17 7 7 17"/>'),
   open: ic('<path d="M8 16 16.5 7.5M9.5 7.5h7v7"/>'),
   save: ic('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+  info: ic('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.2"/><circle cx="12" cy="7.9" r=".6" fill="currentColor"/>'),
   install: ic('<path d="M12 4v10.5M7.5 10 12 14.5 16.5 10M5 19.5h14"/>'),
 };
 

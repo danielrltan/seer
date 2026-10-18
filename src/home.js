@@ -67,6 +67,11 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .proj .view{height:34px;padding:0 12px 0 15px;display:inline-flex;font-size:13.5px;flex:none;gap:4px}.proj .view svg{width:15px;height:15px;margin:0 -2px 0 0}
 /* agents: each one's own mark in its tile (kind from agents.js), not tinted green like a live monitor */
 .agent .ic{color:inherit}
+/* View with Remote Control off: dimmed, and a tap says why (a tooltip; a phone has no hover) */
+.proj .view.off{color:var(--ink3);background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.1)}
+.tip{position:fixed;z-index:30;background:rgba(14,19,17,.9)!important;max-width:240px;padding:9px 12px;border-radius:14px;font:500 13px/1.35 var(--sans);color:var(--ink);pointer-events:none;
+  opacity:0;transform:translateY(4px);transition:opacity .18s,transform .18s}
+.tip.show{opacity:1;transform:none}
 .agent.live .ic{background:linear-gradient(160deg,rgba(255,255,255,.13),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 .5px rgba(255,255,255,.06),0 4px 12px rgba(0,0,0,.3)}
 .agent .ic svg.mark{width:24px;height:24px;stroke:none}
 main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
@@ -156,6 +161,7 @@ ${BACKDROP}
 
 <div class="pane" id="p-agents"><div class="glass list" id="agents"></div></div>
 </main>
+<div class="glass tip" id="tip" role="tooltip"></div>
 <nav class="glass tabs" id="tabs">
   <span class="sel" id="tab-sel"></span>
   <button data-tab="home" class="on"><svg viewBox="0 0 24 24"><path d="M4 16.5a8 8 0 1 1 16 0"/><path d="M12 16.5l3.6-4.6"/><circle cx="12" cy="16.5" r="1.2" fill="currentColor" stroke="none"/></svg>Home</button>
@@ -241,7 +247,8 @@ function render() {
   $('agents').innerHTML = ag.length ? ag.map(g => '<div class="proj mon agent' + (g.busy ? ' live' : '') + '"><span class="ic">' + (AGENT[g.kind] || AGENT.other)
     + '<i class="pip ' + (g.waiting ? 'amber' : g.busy ? 'on pulse' : '') + '"></i></span>'
     + '<div class="main"><div class="nm">' + esc(g.name) + '</div><div class="meta">' + esc([g.waiting ? 'needs you' : g.busy ? 'working' : 'idle ' + ago(g.since), g.dir].filter(Boolean).join(' · ')) + '</div></div>'
-    + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View${BTN.open}</a>' : '') + '</div>').join('') : '<p class="empty">no agents</p>';
+    + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View${BTN.open}</a>'
+      : '<button class="btn view off" data-tip="Turn on Remote Control in this session to view it" aria-label="View: Remote Control is off">View${BTN.info}</button>') + '</div>').join('') : '<p class="empty">no agents</p>';
   // projects
   const rows = (st.desktop ? [{ name: 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
@@ -314,6 +321,22 @@ $('projects').addEventListener('click', e => {
 const unpush = () => document.body.classList.remove('pushed');
 $('push-back').onclick = () => { window.stop(); unpush(); };
 window.addEventListener('pageshow', e => { if (e.persisted) requestAnimationFrame(unpush); });   // back from a project
+
+// A tap on anything with data-tip shows it above that thing for a few seconds; any other tap hides it.
+let tipFor = null, tipTimer = 0;
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-tip]'), tip = $('tip');
+  clearTimeout(tipTimer);
+  if (!t || t === tipFor) { tip.classList.remove('show'); tipFor = null; return; }
+  tip.textContent = t.dataset.tip; tipFor = t;
+  const r = t.getBoundingClientRect(), w = Math.min(240, innerWidth - 24);
+  tip.style.maxWidth = w + 'px';
+  tip.style.left = Math.max(12, Math.min(innerWidth - 12 - tip.offsetWidth, r.right - tip.offsetWidth)) + 'px';
+  tip.style.top = (r.top - tip.offsetHeight - 8) + 'px';
+  tip.classList.add('show');
+  tipTimer = setTimeout(() => { tip.classList.remove('show'); tipFor = null; }, 3500);
+});
+addEventListener('scroll', () => { $('tip').classList.remove('show'); tipFor = null; }, { passive: true });
 
 // Tabs. The open one is kept in the address (#monitors, #agents) so back from a project lands where it was;
 // each keeps its own scroll.
