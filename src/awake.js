@@ -51,16 +51,19 @@ async function lowPowerOn() {
 }
 const pm = args => run(SUDO, ['-n', PMSET, ...args]);
 
-// Called by the daemon every tick with whether any preview is running. Returns what away mode is doing.
-export async function reconcile(wantAwake) {
+// Called by the daemon every tick: wantAwake (activity.js), and headless (lid closed, nobody streaming, no agent
+// working): then Low Power Mode goes on at any charge, not only below 30%, and comes off when streaming starts.
+// Returns what away mode is doing.
+export async function reconcile(wantAwake, { headless = false } = {}) {
   if (!(await ruleInstalled())) return { mode: 'sleeps with the lid closed', why: 'away mode not installed (seer away install)' };
   const j = journal(), b = await battery();
   let want = wantAwake, why = wantAwake ? 'a preview is running' : 'no preview running';
   if (want && b.onBattery && b.pct < RELEASE_BELOW) { want = false; why = `battery ${b.pct}%: letting the Mac sleep`; }
 
-  if (want && b.onBattery && b.pct < LOW_POWER_BELOW && !j.lowPowerByUs && !(await lowPowerOn())) {
+  const lowPower = want && b.onBattery && (headless || b.pct < LOW_POWER_BELOW);
+  if (lowPower && !j.lowPowerByUs && !(await lowPowerOn())) {
     if ((await pm(['-b', 'lowpowermode', '1'])).code === 0) j.lowPowerByUs = true;
-  } else if (j.lowPowerByUs && (!want || !b.onBattery || b.pct >= RESTORE_ABOVE)) {
+  } else if (j.lowPowerByUs && !lowPower && (!headless || !b.onBattery || b.pct >= RESTORE_ABOVE)) {
     if ((await pm(['-b', 'lowpowermode', '0'])).code === 0) j.lowPowerByUs = false;
   }
 
@@ -73,7 +76,7 @@ export async function reconcile(wantAwake) {
     if ((await pm(['-a', 'disablesleep', '0'])).code === 0) j.sleepDisabledByUs = false;
   }
   saveJournal(j);
-  return { mode: want ? 'lid-closed awake' : 'normal sleep', why, battery: b, lowPowerByUs: !!j.lowPowerByUs };
+  return { mode: !want ? 'normal sleep' : headless ? 'headless' : 'lid-closed awake', why, battery: b, lowPowerByUs: !!j.lowPowerByUs };
 }
 
 export async function release() {                                     // seer uninstall, daemon shutdown

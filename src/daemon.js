@@ -6,11 +6,11 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { list } from './core.js';
 import { tail } from './devserver.js';
-import { cleanName, loadConfig } from './store.js';
+import { cleanName, loadConfig, saveConfig } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover, battery } from './awake.js';
 import { awakeReason, seen } from './activity.js';
-import { macStatus } from './macstatus.js';
+import { macStatus, lid, sampleBattery } from './macstatus.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
 import { WebSocketServer } from 'ws';
@@ -44,6 +44,10 @@ a{color:inherit;text-decoration:none}
 .tile .v{font-size:22px;font-weight:600;letter-spacing:-.01em;margin-top:4px;display:flex;align-items:center;gap:8px;white-space:nowrap}
 .tile .s{color:var(--quiet);font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile.wide .v{font-size:15px;margin:0}.tile.wide .s{margin:0}
+.tile.col{flex-direction:column;align-items:stretch;gap:12px}.tile .line{display:flex;align-items:center;gap:12px}
+.stay{display:flex;align-items:center;gap:10px}.stay[hidden]{display:none}
+.stay input{flex:1;accent-color:var(--live);height:28px}
+.stay button{flex:none;height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:500 13px Geist,-apple-system,system-ui,sans-serif}
 .ok{color:var(--live-text)}.warn{color:var(--wait-text)}.bad{color:var(--fail)}
 .batt{width:26px;height:13px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.9}
 .batt i{position:absolute;left:1.5px;top:1.5px;bottom:1.5px;border-radius:1px;background:currentColor}
@@ -74,7 +78,7 @@ async function projects() {
   return out;
 }
 export async function statusJson() {
-  const st = await macStatus({ awake: { awake: why.awake, why: why.why, mode: away.mode }, agentsBusy: why.agentsBusy || 0 });
+  const st = await macStatus({ awake: { awake: why.awake, why: why.why, mode: away.mode, stayUntil: why.stayUntil || 0, headless }, agentsBusy: why.agentsBusy || 0 });
   return { ...st, projects: await projects(), desktop: !!loadConfig().desktop };
 }
 
@@ -86,7 +90,9 @@ async function home() {
   <div class="tile"><div class="k">ping</div><div class="v" id="ping">…</div><div class="s">phone to Mac</div></div>
   <div class="tile"><div class="k">network</div><div class="v" id="net"></div><div class="s" id="net-s"></div></div>
   <div class="tile"><div class="k">lid</div><div class="v" id="lid"></div><div class="s" id="lid-s"></div></div>
-  <div class="tile wide"><span class="dot" id="awake-dot"></span><div><div class="v" id="awake"></div><div class="s" id="awake-s"></div></div></div>
+  <div class="tile wide col"><div class="line"><span class="dot" id="awake-dot"></span><div><div class="v" id="awake"></div><div class="s" id="awake-s"></div></div></div>
+    <div class="stay" id="stay"><input type="range" id="stay-r" min="0" max="11" value="4" aria-label="How long to stay awake"><button id="stay-b">Stay awake 1 h</button></div>
+    <div class="stay" id="staying" hidden><span class="s" id="staying-s"></span><button id="stay-x">Cancel</button></div></div>
 </div>
 <div id="help"></div>
 <div class="label">projects</div>
@@ -112,6 +118,10 @@ function render(st) {
   $('awake-dot').style.background = st.awake.awake ? 'var(--live)' : 'var(--off)';
   $('awake').textContent = st.awake.awake ? 'Awake' : 'Will sleep';
   $('awake-s').textContent = st.awake.why + (st.agentsBusy && !/agent/.test(st.awake.why) ? ', ' + st.agentsBusy + ' agent' + (st.agentsBusy > 1 ? 's' : '') + ' working' : '');
+  const stay = st.awake.stayUntil;
+  $('stay').hidden = !!stay; $('staying').hidden = !stay;
+  if (stay) $('staying-s').textContent = 'staying awake until ' + new Date(stay).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (st.battery.drainPerHour != null) $('batt-s').textContent += ', ~' + st.battery.drainPerHour + '%/h';
   $('help').innerHTML = st.help.map(t => '<div class="help">' + esc(t) + '</div>').join('');
   const rows = (st.desktop ? [{ name: 'desktop', href: '/desktop', state: 'streamed' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => '<a class="row ' + esc(p.state === 'cloud' || p.state === 'streamed' ? 'running' : String(p.state).replace(/\s+/g, '-')) + '" href="' + esc(p.href) + '"><span class="dot"></span><span class="name">' + esc(p.name) + '</span><span class="meta">' + esc(p.state) + '</span></a>').join('') : '<p class="empty">No previews running.</p>';
@@ -126,6 +136,16 @@ async function refresh() {
     render(await (await fetch('/status.json', { cache: 'no-store' })).json());
   } catch { $('ping').textContent = 'lost'; $('ping').className = 'v bad'; }
 }
+// Stay awake: 10 min to 12 h, finer at the short end.
+const STEPS = [10, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720];
+const span = m => m < 60 ? m + ' min' : (m % 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m / 60 + ' h');
+$('stay-r').oninput = () => { $('stay-b').textContent = 'Stay awake ' + span(STEPS[$('stay-r').value]); };
+async function setStay(minutes) {
+  try { await fetch('/awake', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ minutes }) }); } catch {}
+  refresh();
+}
+$('stay-b').onclick = () => setStay(STEPS[$('stay-r').value]);
+$('stay-x').onclick = () => setStay(0);
 render(${initial});
 refresh(); setInterval(() => { if (!document.hidden) refresh(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
@@ -199,6 +219,18 @@ const server = http.createServer(async (req, res) => {
       } catch (e) { return json(500, { error: `Mac view: ${e.message}` }); }
     }
     if (url.pathname === '/desktop' && loadConfig().desktop) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
+    // Stay awake (the slider): { minutes } from now, 0 cancels; at most 12 hours.
+    if (url.pathname === '/awake' && req.method === 'POST') {
+      const cfg = loadConfig();
+      const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
+      if (req.headers.origin !== `https://seer.${cfg.zone}` || !(await verifyAccess(req.headers['cf-access-jwt-assertion'], cfg).catch(() => null))) return json(403, { error: 'sign in first' });
+      let body = ''; for await (const c of req) { body += c; if (body.length > 1000) break; }
+      const minutes = Math.max(0, Math.min(720, Math.round(Number(JSON.parse(body || '{}').minutes) || 0)));
+      saveConfig({ stayAwakeUntil: minutes ? Date.now() + minutes * 60_000 : 0 });
+      log(minutes ? `stay awake: ${minutes} min, asked from the phone` : 'stay awake: cancelled');
+      await tick();
+      return json(200, { stayUntil: loadConfig().stayAwakeUntil || 0 });
+    }
     if (url.pathname === '/ping') { res.writeHead(204, { 'cache-control': 'no-store' }); return res.end(); }
     if (url.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(await statusJson())); }
     if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
@@ -241,26 +273,36 @@ server.on('upgrade', async (req, socket, head) => {
 // Hold the Mac awake while something needs it (activity.js: plugged in, an agent working, someone watching, or
 // the reachable window after those) and let it sleep otherwise. caffeinate covers an open lid; away mode
 // (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
-let awake = null, running = false, windowSince = 0, why = { awake: false, why: 'starting' };
+let awake = null, running = false, windowSince = 0, why = { awake: false, why: 'starting' }, lidState = 'unknown', headless = false, netTick = 0;
 const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
 const checkNetwork = failover(log);
 async function tick() {
   const b = await battery().catch(() => ({ onBattery: false, pct: 100 }));
-  why = awakeReason({ pluggedIn: !b.onBattery, watching: viewerCount() > 0 || windowOpen() });
+  const watching = viewerCount() > 0 || windowOpen();
+  why = awakeReason({ pluggedIn: !b.onBattery, watching });
   running = why.awake;
+  // Headless: lid closed, nobody streaming, no agent working. The Mac only waits, so it saves all it can.
+  lidState = await lid().catch(() => 'unknown');
+  headless = running && lidState === 'closed' && !watching && !why.agentsBusy;
   if (running && !awake) {
     awake = spawn('/usr/bin/caffeinate', ['-is'], { stdio: 'ignore' });
     awake.on('exit', () => { awake = null; });
   } else if (!running && awake) { awake.kill(); awake = null; }
-  const next = loadConfig().away ? await reconcile(running).then(r => ({ ...r, why: running ? why.why : r.why })).catch(e => ({ mode: 'error', why: e.message }))
+  const next = loadConfig().away ? await reconcile(running, { headless }).then(r => ({ ...r, why: running ? why.why : r.why })).catch(e => ({ mode: 'error', why: e.message }))
     : { mode: 'sleeps normally', why: 'away mode off (seer away on)' };
   if (next.mode !== away.mode || next.why !== away.why) log(`away mode: ${next.mode} (${next.why})`);
   away = next;
+  sampleBattery(b, away.mode);
   // The Mac view's window closes two minutes after the last viewer of the stream has gone.
   if (windowOpen() && viewerCount() > 0) windowSince = Date.now();
   if (windowOpen() && viewerCount() === 0 && Date.now() - windowSince > 120_000) closeWindow(log);
 }
 setInterval(tick, 15_000);
-setInterval(() => checkNetwork(running && !!loadConfig().away).catch(e => log(`failover: ${e.message}`)), 5_000);
+// The network check (hotspot failover): every 5 s while the lid is closed and the Mac is in use; every 30 s when
+// headless (it only waits) or the lid is open (someone is at it).
+setInterval(() => {
+  if (++netTick % ((lidState === 'closed' && !headless) ? 1 : 6)) return;
+  checkNetwork(running && !!loadConfig().away).catch(e => log(`failover: ${e.message}`));
+}, 5_000);
 tick();
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { awake?.kill(); await release().catch(() => {}); process.exit(0); });

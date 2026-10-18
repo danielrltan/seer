@@ -31,7 +31,7 @@ const HELP = `seer: run a build and get a private link to open it on your phone
   seer away hotspot "SSID"  fail over to this phone hotspot when the Wi-Fi goes (password on stdin)
   seer away status        what away mode is doing now
   seer away hooks         tell Seer when Claude Code agents are working (adds two hooks)
-  seer away reachable N   stay reachable N minutes after the last activity (default 30)
+  seer away reachable N   stay reachable N minutes after the last activity (default 15)
   seer away join          join the hotspot now, to test it (switches Wi-Fi)
   seer uninstall          stop the background services and let the Mac sleep normally
 `;
@@ -63,7 +63,7 @@ function installHooks() {
   const cmd = state => `${process.execPath} ${new URL('./seer-hook.js', import.meta.url).pathname} ${state}`;
   settings.hooks ||= {};
   let added = 0;
-  for (const [event, state] of [['UserPromptSubmit', 'busy'], ['Stop', 'idle']]) {
+  for (const [event, state] of [['UserPromptSubmit', 'busy'], ['Notification', 'waiting'], ['Stop', 'idle']]) {
     const list = settings.hooks[event] ||= [];
     if (JSON.stringify(list).includes('seer-hook.js ' + state)) continue;
     list.push({ hooks: [{ type: 'command', command: cmd(state), timeout: 5 }] });
