@@ -3,6 +3,7 @@
 // token for the home app (verified here against the team's signing keys, not just trusted as a header) and come
 // from the home page's own origin. The daemon listens on 127.0.0.1, where any page in a local browser could
 // otherwise open a WebSocket to it.
+import { watchClipboard, stopClipboard } from './clipboard.js';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
@@ -166,6 +167,7 @@ export async function streamUpgrade(req, socket, head, log) {
       ws.needKey = true;
       if (!helper) ws.send(JSON.stringify({ error: 'Seer Stream is not running on the Mac' }));
       if (viewers.size === 1) startCapture(); else { if (lastConfig) ws.send(lastConfig); requestKey(); }
+      watchClipboard(text => { for (const v of viewers) v.send(JSON.stringify({ clip: text })); }, log);
       ws.on('message', (data, binary) => {
         if (binary) return;
         let m; try { m = JSON.parse(String(data)); } catch { return; }
@@ -177,7 +179,7 @@ export async function streamUpgrade(req, socket, head, log) {
       ws.on('close', () => {
         viewers.delete(ws);
         log(`desktop viewer left; ${viewers.size} watching`);
-        if (!viewers.size) { toHelper({ cmd: 'stop' }); lastConfig = null; restoreDock(); }
+        if (!viewers.size) { toHelper({ cmd: 'stop' }); lastConfig = null; restoreDock(); stopClipboard(); }
       });
     });
   }

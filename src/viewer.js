@@ -97,6 +97,18 @@ function makeDecoder(cfg) {
   configured = true; waitingKey = true;
 }
 
+// Copied on the Mac: onto the phone's clipboard at the next tap (a page may only write it during one).
+let pendingClip = null;
+document.addEventListener('touchend', () => {
+  if (pendingClip === null || !navigator.clipboard) return;
+  const text = pendingClip; pendingClip = null;
+  navigator.clipboard.writeText(text).then(() => {
+    const was = [$('msg').textContent, $('dot').className];
+    status('Copied', 'live');
+    setTimeout(() => { if ($('msg').textContent === 'Copied') status(...was); }, 1500);
+  }).catch(() => { pendingClip = text; });
+}, true);
+
 function connect() {
   status('Connecting', '');
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ${JSON.stringify(wsPath)} + location.search);
@@ -108,6 +120,7 @@ function connect() {
       if (m.error) status(m.error, 'fail');
       if ('dock' in m && $('dock')) $('dock').classList.toggle('on', m.dock);
       if ('textFocus' in m) textFocus(m.textFocus);
+      if (typeof m.clip === 'string') pendingClip = m.clip;
       return;
     }
     const buf = new Uint8Array(ev.data), type = buf[0];
