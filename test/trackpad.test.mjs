@@ -399,12 +399,12 @@ await test('one finger up the right edge -> scroll (vertical only), no cursor', 
   await down([1, PAD.left + 350 - 12, 600]); await slide(4, -150, 128); await up();
   const m = await msgs(), k = kinds(m);
   ok(!k.includes('nudge'), 'no nudge'); eq(k[0], 'scroll:begin', 'begin'); eq(k[k.length - 1], 'scroll:end', 'end');
-  near(sum(m, 'dy', 'scroll'), 150 * 1.25, 4, 'against the finger'); near(sum(m, 'dx', 'scroll'), 0, 0.01, 'no sideways');
-  ok(m[m.length - 1].vy > 1, 'glides'); eq(m[m.length - 1].vx, 0, 'no sideways glide'); return m;
+  near(sum(m, 'dy', 'scroll'), 150 * 1.25 * 0.5, 3, 'against the finger, at half gain'); near(sum(m, 'dx', 'scroll'), 0, 0.01, 'no sideways');
+  ok(m[m.length - 1].vy > 0.5, 'glides'); eq(m[m.length - 1].vx, 0, 'no sideways glide'); return m;
 });
 await test('one finger down the left edge -> scroll', async () => {
   await down([1, PAD.left + 10, 300]); await slide(0, 120, 200); await up();
-  const m = await msgs(); ok(!kinds(m).includes('nudge'), 'no nudge'); near(sum(m, 'dy', 'scroll'), -120 * 1.25, 4, 'scrolled'); return m;
+  const m = await msgs(); ok(!kinds(m).includes('nudge'), 'no nudge'); near(sum(m, 'dy', 'scroll'), -120 * 1.25 * 0.5, 3, 'scrolled'); return m;
 });
 await test('from the edge sideways -> cursor, not scroll', async () => {
   await down([1, PAD.left + 10, 400]); await slide(120, 10, 200); await up();
