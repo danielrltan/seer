@@ -94,6 +94,30 @@ export async function removeAccessApp(acc, host) {
   for (const a of apps) if (a.domain === host) await cf('DELETE', `/accounts/${acc}/access/apps/${a.id}`);
 }
 
+// ---------- the front door Worker ----------
+export async function putWorker(acc, script, code, secrets) {
+  const token = readSecret('cf-token');
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify({
+    main_module: 'worker.js', compatibility_date: '2026-09-01',
+    bindings: Object.entries(secrets).map(([name, text]) => ({ type: 'secret_text', name, text })),
+  })], { type: 'application/json' }));
+  form.append('worker.js', new Blob([code], { type: 'application/javascript+module' }), 'worker.js');
+  const res = await fetch(`${API}/accounts/${acc}/workers/scripts/${script}`, { method: 'PUT', headers: { authorization: `Bearer ${token}` }, body: form });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.success === false) throw new Error(`Cloudflare upload of Worker ${script} failed (${res.status}): ${(json.errors || []).map(e => `${e.code}: ${e.message}`).join('; ')}`);
+}
+// A Worker custom domain: the hostname's DNS record is made by Cloudflare and points at the Worker.
+export async function ensureWorkerDomain(acc, zoneId, hostname, script) {
+  const have = (await cf('GET', `/accounts/${acc}/workers/domains?hostname=${encodeURIComponent(hostname)}`)) || [];
+  if (have.some(d => d.hostname === hostname && d.service === script)) return;
+  await cf('PUT', `/accounts/${acc}/workers/domains`, { hostname, service: script, zone_id: zoneId, environment: 'production' });
+}
+export async function removeWorkerDomain(acc, hostname) {
+  const have = (await cf('GET', `/accounts/${acc}/workers/domains?hostname=${encodeURIComponent(hostname)}`)) || [];
+  for (const d of have) if (d.hostname === hostname) await cf('DELETE', `/accounts/${acc}/workers/domains/${d.id}`);
+}
+
 export async function identityProviders(acc) {
   try { return await cf('GET', `/accounts/${acc}/access/identity_providers`); } catch { return null; }   // null: the token may not read them
 }

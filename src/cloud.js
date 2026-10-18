@@ -11,7 +11,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
-import { HOME, loadConfig, saveConfig, cleanName } from './store.js';
+import { HOME, loadConfig, saveConfig, cleanName, loadPreviews } from './store.js';
+import * as cf from './cloudflare.js';
+import { checkProtected } from './core.js';
 
 const FLY = ['/opt/homebrew/bin/fly', '/usr/local/bin/fly'].find(f => fs.existsSync(f)) || 'fly';
 const GATE = new URL('./cloud/gate.js', import.meta.url).pathname;
@@ -130,7 +132,31 @@ export async function cloudUp({ path: dirArg, name: rawName, cmd, build, port, i
   const log = await fly(['deploy', ctx, '--config', path.join(ctx, 'fly.seer.toml'), '--app', app, '--remote-only', '--ha=false', '--strategy', 'immediate', '--yes']);
   fs.writeFileSync(path.join(HOME, 'logs', `cloud-${name}.log`), log);
   await enforceOneMachine(app);
-  return { name, app, url: copies[name].url, shippedMB: +(bytes / 1048576).toFixed(1) };
+  const { link, signIn } = await cloudLink(name);
+  return { name, app, link, signIn, shippedMB: +(bytes / 1048576).toFixed(1) };
+}
+
+// The link: seer-<name>.<zone>, behind Access, through the front door Worker to the machine. Fails closed:
+// the Access app exists before the hostname does, and a link that answers without sign-in is taken down.
+const FRONT = 'seer-front';
+const FRONT_CODE = new URL('./front/worker.js', import.meta.url);
+export async function cloudLink(rawName) {
+  const name = cleanName(rawName), cfg = loadConfig(), copies = { ...(cfg.cloud || {}) }, c = copies[name];
+  if (!c) throw new Error(`no cloud copy named ${name}`);
+  const host = `seer-${name}.${cfg.zone}`;
+  if (loadPreviews()[name]?.published) throw new Error(`${host} is a live link from this Mac; give the cloud copy another name`);
+  await cf.ensureAccessApp(cfg.accountId, host, cfg.policyId);
+  c.host = host; c.link = `https://${host}`;
+  saveConfig({ cloud: copies });
+  const routes = Object.fromEntries(Object.values(copies).filter(x => x.host).map(x => [x.host, { app: x.app, key: x.key }]));
+  await cf.putWorker(cfg.accountId, FRONT, fs.readFileSync(FRONT_CODE, 'utf8'), { SEER_ROUTES: JSON.stringify(routes) });
+  await cf.ensureWorkerDomain(cfg.accountId, cfg.zoneId, host, FRONT);
+  const signIn = await checkProtected(cfg, host);
+  if (signIn === 'OPEN') {
+    await cf.removeWorkerDomain(cfg.accountId, host);
+    throw new Error(`${c.link} answered without sign-in, so its domain was removed again; check the Access app for ${host}`);
+  }
+  return { link: c.link, signIn };
 }
 
 // Belt and braces: a copy is one machine, never more, however it was deployed.
@@ -164,6 +190,7 @@ export async function cloudDown(rawName) {
   const name = cleanName(rawName), cfg = loadConfig(), copies = { ...(cfg.cloud || {}) }, c = copies[name];
   if (!c) throw new Error(`no cloud copy named ${name}`);
   if (!c.app.startsWith('seer-')) throw new Error(`refusing to destroy ${c.app}: not a Seer app`);
+  if (c.host) { const cfg2 = loadConfig(); await cf.removeWorkerDomain(cfg2.accountId, c.host).catch(() => {}); await cf.removeAccessApp(cfg2.accountId, c.host).catch(() => {}); }
   await fly(['apps', 'destroy', c.app, '--yes']);
   delete copies[name];
   saveConfig({ cloud: copies });

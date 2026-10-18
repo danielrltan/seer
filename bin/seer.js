@@ -107,7 +107,8 @@ try {
     case 'setup': { const steps = await core.setup({ zone: o.zone, emails: o.email }); show(steps, steps.map(s => `- ${s}`).join('\n')); break; }
     case 'cloud': {
       const sub = arg, rest = positionals[2];
-      if (sub === 'up') { const r = await cloud.cloudUp({ path: rest, name: o.name, cmd: o.cmd, build: o.build, idleMin: o.idle ? Number(o.idle) : undefined }); show(r, `${r.app}: deployed (${r.shippedMB} MB shipped)`); }
+      if (sub === 'up') { const r = await cloud.cloudUp({ path: rest, name: o.name, cmd: o.cmd, build: o.build, idleMin: o.idle ? Number(o.idle) : undefined }); show(r, `${r.link}  (${r.app}, ${r.shippedMB} MB shipped, sign-in ${r.signIn})`); }
+      else if (sub === 'link') { const r = await cloud.cloudLink(rest); show(r, `${r.link}  (${r.signIn})`); }
       else if (sub === 'status') { const r = await cloud.cloudStatus(); show(r, r.map(c => `${c.name} (${c.app}): ${c.machines.map(m => `${m.state} ${m.size}`).join(', ') || 'no machines'}`).join('\n') || 'no cloud copies'); }
       else if (sub === 'stop') { const r = await cloud.cloudStopAll(); show(r, r.length ? `stopped ${r.join(', ')}` : 'nothing was running'); }
       else if (sub === 'down') { const r = await cloud.cloudDown(rest); show(r, `destroyed ${r.destroyed}`); }
