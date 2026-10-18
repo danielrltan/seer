@@ -51,8 +51,8 @@ ${appHead}
 .hero .srow .why{margin-top:2px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the Mac's state as the eye: open, its pupil turning while an agent works, shut while the Mac sleeps */
 .hero .eye.big{flex:none;width:66px;height:48px}
-.hero #sleep-b{flex:none;margin-left:auto}
-.hero #view-b{flex:none}
+.hero #sleep-b{flex:none}
+.hero #view-b{flex:none;margin-left:auto}   /* on the right, under the thumb */
 .hero .hfoot:has(#count:not([hidden])){flex-wrap:wrap;row-gap:12px}   /* a countdown showing: a row of its own above the buttons */
 .hero .hfoot:has(#count:not([hidden])) .count{flex:1 1 100%;order:-1}
 #sleep-b.armed{background:rgba(255,90,95,.2);color:#ffd9da;box-shadow:inset 0 1px 0 rgba(255,200,200,.25),0 0 0 .5px rgba(255,90,95,.6)}
@@ -193,7 +193,7 @@ ${BACKDROP}
 <section class="glass hero">
   <div class="top"><span class="k dev" id="dev">mac</span><span class="tr"><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span><i class="dev-ic" id="dev-ic"></i></span></div>
   <div class="srow">${MARK.replace('class="eye"', 'class="eye big" id="eye"')}<div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div></div>
-  <div class="hfoot"><a class="btn" id="view-b" href="/desktop" hidden aria-label="View screen">${BTN.screen}<span>View screen</span></a><div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep</span></button></div>
+  <div class="hfoot"><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep</span></button><div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div><a class="btn" id="view-b" href="/desktop" hidden aria-label="View screen">${BTN.screen}<span>View screen</span></a></div>
 </section>
 
 <div id="help"></div>
