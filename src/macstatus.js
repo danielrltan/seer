@@ -101,6 +101,27 @@ export function sampleBattery(b, state) {
     }
   } catch {}
 }
+// The charge over the last 6 hours for the battery card's chart: [minutes ago, %], one point per 6 minutes at
+// most. A stretch the Mac slept through has no samples, and the chart leaves it a gap. Cached a minute.
+let hist = { at: 0, value: [] };
+function batteryHistory() {
+  if (Date.now() - hist.at < 60_000) return hist.value;
+  const from = Date.now() - 6 * 3600_000, out = [];
+  try {
+    const lines = fs.readFileSync(DRAIN_LOG, 'utf8').trim().split('\n');
+    let lastBucket = -1;
+    for (let i = Math.max(0, lines.length - 1000); i < lines.length; i++) {
+      let r; try { r = JSON.parse(lines[i]); } catch { continue; }
+      if (!(r.t >= from) || typeof r.pct !== 'number') continue;
+      const ago = Math.round((Date.now() - r.t) / 60_000), bucket = Math.floor(ago / 6);
+      if (bucket === lastBucket) continue;
+      lastBucket = bucket; out.push([ago, r.pct]);
+    }
+  } catch {}
+  hist = { at: Date.now(), value: out };
+  return out;
+}
+
 // %/h on battery over the last hour of samples in the same state, once there are 30 min of them; else null.
 function drainRate(state) {
   let rows = [];
@@ -117,5 +138,5 @@ export async function macStatus({ awake, agentsBusy, lid: lidState, notes = [] }
   const [batt, netw] = await Promise.all([batteryDetail(), network()]);
   const cfg = loadConfig();
   const hotspot = { name: cfg.hotspotSsid || null, offlineFor: netState.downSince ? Math.round((Date.now() - netState.downSince) / 1000) : 0, joining: netState.joining, lastJoin: netState.lastJoin };
-  return { at: Date.now(), battery: { ...batt, drainPerHour: batt.pluggedIn ? null : drainRate(awake.mode) }, lid: lidState || await lid(), network: netw, awake, agentsBusy, hotspot, help: notes };
+  return { at: Date.now(), battery: { ...batt, drainPerHour: batt.pluggedIn ? null : drainRate(awake.mode), history: batteryHistory() }, lid: lidState || await lid(), network: netw, awake, agentsBusy, hotspot, help: notes };
 }

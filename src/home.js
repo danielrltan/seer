@@ -20,18 +20,32 @@ ${appHead}
 .state.use{color:#fff}
 .why{font-size:15px;color:var(--ink2)}
 .count{display:flex;align-items:center;gap:12px;margin-top:16px}
-.hero .srow{display:flex;align-items:center;gap:14px;margin:14px 0 6px}
-.hero .srow .state{margin:0;white-space:nowrap}
-.hero .foot{display:flex;align-items:center;gap:12px;min-height:40px}
-.hero .foot .why{min-width:0}
+.hero .srow{display:flex;align-items:center;gap:13px;margin-top:16px}
+.hero .sw{flex:1;min-width:0}
+.hero .srow .state{margin:0;font-size:31px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero .srow .why{margin-top:5px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the Mac's state as the eye: open, its pupil turning while an agent works, shut while the Mac sleeps */
-.hero .eye.big{flex:none;width:60px;height:44px}
-.hero #sleep-b{flex:none;margin-left:auto}
+.hero .eye.big{flex:none;width:50px;height:37px}
+.hero #sleep-b{flex:none;align-self:center}
 #sleep-b.armed{background:rgba(255,90,95,.2);color:#ffd9da;box-shadow:inset 0 1px 0 rgba(255,200,200,.25),0 0 0 .5px rgba(255,90,95,.6)}
 .count .t{font:700 20px/1 var(--round);font-variant-numeric:tabular-nums;min-width:70px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-.tile{padding:14px 16px 13px;border-radius:24px;min-height:104px;display:flex;flex-direction:column}
-.tile .v{font:700 30px/1.05 var(--round);letter-spacing:-.02em;margin-top:10px;font-variant-numeric:tabular-nums}
+/* stats, by weight: battery first and widest, with the biggest number; then ping, network and lid as three
+   equal smaller tiles; their labels and subs quiet, their values the thing to read */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.tile{padding:13px 13px 12px;border-radius:22px;min-height:108px;display:flex;flex-direction:column;min-width:0}
+.tile .v{font:700 21px/1.1 var(--round);letter-spacing:-.02em;margin-top:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile .th .ti{width:24px;height:16px}
+.tile.wide{padding:15px 18px 17px;border-radius:24px;min-height:150px}
+.tile.wide .th .ti{width:30px;height:20px}
+.tile.wide .brow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:auto}
+.tile.wide .v{font-size:46px;margin-top:0;letter-spacing:-.035em}
+.tile.wide .s{margin:0;padding:0}
+.tile.wide .track{flex:none;margin-top:12px}
+/* the last 6 hours of charge, behind the number: a line and a soft fill, broken where the Mac slept */
+.bchart{flex:1 1 auto;min-height:0;width:100%;margin:10px 0 -26px;overflow:visible}
+.bchart #bchart-l{fill:none;stroke:var(--live);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;opacity:.8}
+.bchart.red #bchart-l{stroke:var(--red)}.bchart.red stop{stop-color:var(--red)}
+.tile.wide .brow{position:relative}
 .tile .s{font:500 12px var(--mono);color:var(--ink3);margin-top:auto;padding-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .green{color:var(--live)!important;text-shadow:0 0 18px var(--glow)}.amber{color:var(--amber)!important}.red{color:var(--red)!important}
 svg.scope{width:100%;height:28px;margin-top:10px;overflow:visible}
@@ -97,7 +111,7 @@ main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
   min-height:calc(100vh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   min-height:calc(100dvh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
 #p-home>*{flex:none;margin:0}
-#p-home .grid{flex:1 1 auto;grid-template-rows:1fr 1fr}
+#p-home .tile.wide{flex:1 1 auto}
 #help:empty{display:none}
 #help .help:last-child{margin-bottom:0}
 /* the tab bar: a floating glass capsule; a lit glass pill slides under the tab that is open */
@@ -150,15 +164,14 @@ ${BACKDROP}
 <div class="pane on" id="p-home">
 <section class="glass hero">
   <div class="top"><span class="k" id="dev">mac</span><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span></div>
-  <div class="srow">${MARK.replace('class="eye"', 'class="eye big" id="eye"')}<div class="state" id="state">—</div></div>
-  <div class="foot"><div class="why" id="why"></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep now</span></button></div>
+  <div class="srow">${MARK.replace('class="eye"', 'class="eye big" id="eye"')}<div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep</span></button></div>
   <div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div>
 </section>
 
 <div id="help"></div>
 
+<div class="glass tile wide"><div class="th"><span class="k">battery</span><svg class="ti" id="batt-ic" viewBox="0 0 30 20" aria-hidden="true"><rect x="1.5" y="3.5" width="23.5" height="13" rx="4"/><path d="M28 8.2v3.6"/><rect class="fill" id="batt-f" x="4" y="6" width="0" height="8" rx="2"/><path class="bolt" id="batt-bolt" d="M14.6 4.2 9.6 11h4.2l-1.6 4.8 5.2-7h-4.3Z"/></svg></div><svg class="bchart" id="bchart" viewBox="0 0 360 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="bfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2bf08a" stop-opacity=".16"/><stop offset="1" stop-color="#2bf08a" stop-opacity="0"/></linearGradient></defs><path id="bchart-a" fill="url(#bfill)"/><path id="bchart-l"/></svg><div class="brow"><div class="v" id="batt">—</div><div class="s" id="batt-s"></div></div><div class="track"><i id="batt-i"></i></div></div>
 <div class="grid">
-  <div class="glass tile"><div class="th"><span class="k">battery</span><svg class="ti" id="batt-ic" viewBox="0 0 30 20" aria-hidden="true"><rect x="1.5" y="3.5" width="23.5" height="13" rx="4"/><path d="M28 8.2v3.6"/><rect class="fill" id="batt-f" x="4" y="6" width="0" height="8" rx="2"/><path class="bolt" id="batt-bolt" d="M14.6 4.2 9.6 11h4.2l-1.6 4.8 5.2-7h-4.3Z"/></svg></div><div class="v" id="batt">—</div><div class="track" style="flex:none;margin-top:12px"><i id="batt-i"></i></div><div class="s" id="batt-s"></div></div>
   <div class="glass tile"><div class="th"><span class="k">ping</span><svg class="ti" id="ping-ic" viewBox="0 0 30 20" aria-hidden="true"><path d="M1.5 10.5h5.5l3-7 4.6 13.5 3.6-10 2.1 3.5h8.2"/></svg></div><div class="v" id="ping">—</div><svg class="scope" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline id="scope" points=""/></svg></div>
   <div class="glass tile"><div class="th"><span class="k">network</span><svg class="ti wifi" viewBox="0 0 30 20" aria-hidden="true"><path id="r3" d="M2.5 7.6a17.6 17.6 0 0 1 25 0"/><path id="r2" d="M7 12.1a11.2 11.2 0 0 1 16 0"/><path id="r1" d="M11.4 16.3a5.1 5.1 0 0 1 7.2 0"/><circle cx="15" cy="18.4" r="1.6"/><path class="x" id="wifi-x" d="M4.5 1.5l21 17"/></svg></div><div class="v" id="net">—</div><div class="s" id="net-s"></div></div>
   <div class="glass tile"><div class="th"><span class="k">lid</span><svg class="ti lap" viewBox="0 0 30 20" aria-hidden="true"><path id="lap-screen" d="M5.5 2.5h19a1.5 1.5 0 0 1 1.5 1.5v10.5H4V4a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M1.5 16.8h27"/></svg></div><div class="v" id="lid">—</div><div class="s" id="lid-s"></div></div>
@@ -235,6 +248,14 @@ function render() {
   const low = !b.pluggedIn && b.pct <= 20;
   $('batt').textContent = b.pct + '%'; $('batt').className = 'v ' + (low ? 'red' : b.pluggedIn ? 'green' : '');
   $('batt-i').style.width = b.pct + '%'; $('batt-i').className = low ? 'red' : '';
+  // chart: x is time (6 h ago at the left), y the charge; a gap of over 15 minutes between samples breaks the line
+  const hs = (b.history || []).slice().sort((p, q) => q[0] - p[0]), X = ago => (360 - ago) / 360 * 360, Y = pct => 100 - pct;
+  let line = '', area = '', run = [];
+  const close = () => { if (run.length > 1) { line += 'M' + run.map(p => X(p[0]).toFixed(1) + ' ' + Y(p[1])).join('L'); area += 'M' + X(run[0][0]).toFixed(1) + ' 100L' + run.map(p => X(p[0]).toFixed(1) + ' ' + Y(p[1])).join('L') + 'L' + X(run[run.length - 1][0]).toFixed(1) + ' 100Z'; } run = []; };
+  for (const p of hs) { if (run.length && run[run.length - 1][0] - p[0] > 15) close(); run.push(p); }
+  close();
+  $('bchart-l').setAttribute('d', line); $('bchart-a').setAttribute('d', area);
+  $('bchart').setAttribute('class', 'bchart' + (low ? ' red' : ''));
   $('batt-f').setAttribute('width', (Math.max(0, Math.min(100, b.pct)) / 100 * 18.5).toFixed(1));
   $('batt-ic').setAttribute('class', 'ti' + (low ? ' red' : b.pluggedIn ? ' green' : '') + (b.state === 'charging' ? ' charging' : ''));
   $('batt-s').textContent = b.pluggedIn ? (b.state === 'charging' ? 'charging' : 'plugged in') : (b.remaining ? b.remaining + ' left' : 'on battery') + (b.drainPerHour != null ? ' · ' + b.drainPerHour + '%/h' : '');
@@ -300,7 +321,7 @@ async function refresh() {
     // Just sent to sleep: the Mac answers awake for the few seconds it takes to go, so hold "Asleep". Still
     // answering after that, it did not sleep (someone touched it, or it woke): show it as it is.
     if (sleptAt && Date.now() - sleptAt < 15000) return;
-    if (sleptAt) { sleptAt = 0; const b = $('sleep-b'); b.disabled = false; b.lastChild.textContent = 'Sleep now'; }
+    if (sleptAt) { sleptAt = 0; const b = $('sleep-b'); b.disabled = false; b.lastChild.textContent = 'Sleep'; }
     st = next;
     render();
   } catch { $('link').textContent = 'lost'; $('link-pip').className = 'pip red'; $('ping').textContent = '—'; $('ping-ic').setAttribute('class', 'ti'); }
@@ -325,8 +346,8 @@ let armed = 0, sleptAt = 0;
 $('sleep-b').onclick = async () => {
   const b = $('sleep-b');
   if (Date.now() > armed) {
-    armed = Date.now() + 3000; b.lastChild.textContent = 'Sleep now?'; b.classList.add('armed');
-    setTimeout(() => { if (Date.now() > armed) { b.lastChild.textContent = 'Sleep now'; b.classList.remove('armed'); } }, 3100);
+    armed = Date.now() + 3000; b.lastChild.textContent = 'Sleep?'; b.classList.add('armed');
+    setTimeout(() => { if (Date.now() > armed) { b.lastChild.textContent = 'Sleep'; b.classList.remove('armed'); } }, 3100);
     return;
   }
   armed = 0; b.classList.remove('armed'); b.disabled = true; b.lastChild.textContent = 'Sleeping';
@@ -335,7 +356,7 @@ $('sleep-b').onclick = async () => {
     if (!r.ok) throw new Error();
     sleptAt = Date.now();
     $('eye').classList.add('asleep'); $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'since ' + clockOf(Date.now()); $('why').hidden = false; $('count').hidden = true;
-  } catch { b.disabled = false; b.lastChild.textContent = 'Sleep now'; }
+  } catch { b.disabled = false; b.lastChild.textContent = 'Sleep'; }
 };
 
 // Opening a project slides a sheet over (see .push); the project starts loading the moment it is tapped.
