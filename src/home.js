@@ -297,7 +297,7 @@ let armed = 0;
 $('sleep-b').onclick = async () => {
   const b = $('sleep-b');
   if (Date.now() > armed) {
-    armed = Date.now() + 3000; b.lastChild.textContent = 'Tap again'; b.classList.add('armed');
+    armed = Date.now() + 3000; b.lastChild.textContent = 'Sleep now?'; b.classList.add('armed');
     setTimeout(() => { if (Date.now() > armed) { b.lastChild.textContent = 'Sleep now'; b.classList.remove('armed'); } }, 3100);
     return;
   }
