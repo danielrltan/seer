@@ -52,10 +52,10 @@ body.short-vp #app{padding-bottom:10px}
   box-shadow:0 0 0 .5px rgba(255,255,255,.17),0 18px 44px rgba(0,0,0,.7)}
 #wrap{transform-origin:0 0}
 canvas{display:block}
-/* The Mac's pointer, ringed in green so it is easy to find on a small screen, and a ring that spreads where a
+/* The Mac's pointer on a small filled green dot (behind the arrow, just below its tip) so it is easy to find on a small screen, and a ring that spreads where a
    click lands. Drawn on the phone at the position the Mac reports; the Mac's own cursor is unchanged. */
-#halo{position:absolute;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;pointer-events:none;z-index:2;opacity:0;
-  border:2.5px solid var(--live);background:rgba(43,240,138,.13);box-shadow:0 0 12px var(--glow),inset 0 0 8px rgba(43,240,138,.25);transition:opacity .35s}
+#halo{position:absolute;left:0;top:0;width:18px;height:18px;margin:-6px 0 0 -6px;border-radius:50%;pointer-events:none;z-index:2;opacity:0;
+  background:rgba(43,240,138,.45);box-shadow:0 0 0 1.5px rgba(43,240,138,.85),0 0 8px var(--glow);transition:opacity .35s}
 #halo.on{opacity:1}#halo.on.rest{opacity:.55}
 .ripple{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;pointer-events:none;z-index:2;
   border:2.5px solid var(--live);box-shadow:0 0 10px var(--glow);animation:ripple .5s cubic-bezier(.2,.7,.3,1) forwards}
