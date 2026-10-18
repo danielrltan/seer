@@ -359,7 +359,7 @@ async function safeTick() {
     // A broken tick must not keep the Mac held on its last decision: after three in a row, let go.
     if (++failures === 3) {
       log('three ticks failed: letting the Mac sleep');
-      state = { running: false, headless: false, label: 'Idle', why: 'Seer error', mode: 'sleep allowed', countdown: null, closingSleeps: false, notes: [] };
+      state = { running: false, headless: false, label: 'Idling', why: 'Seer error', mode: 'sleep allowed', countdown: null, closingSleeps: false, notes: [] };
       await letGo();
     }
   }

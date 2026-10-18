@@ -18,6 +18,14 @@ ${appHead}
 .state{font:750 44px/1 var(--round);letter-spacing:-.035em;margin:12px 0 5px;color:var(--ink2)}
 .state.live{color:var(--live);text-shadow:0 0 28px var(--glow)}
 .state.use{color:#fff}
+/* Idling: nothing active, the Mac on its way to sleep. Warm amber, breathing slowly, and the eye blinks twice now
+   and then */
+.state.idle{color:var(--amber);animation:idle 3.2s ease-in-out infinite}
+@keyframes idle{50%{opacity:.55;text-shadow:0 0 22px rgba(255,196,77,.35)}}
+.eye.big.idling .open{animation:blink 4.6s ease-in-out infinite}
+@keyframes blink{0%,84%,92%,100%{transform:none}86%,90%{transform:scaleY(.08)}88%{transform:scaleY(.9)}}
+#count.idle .track i{background:var(--amber);box-shadow:0 0 12px rgba(255,196,77,.4)}
+@media (prefers-reduced-motion: reduce){.state.idle,.eye.big.idling .open{animation:none}}
 .why{font-size:15px;color:var(--ink2)}
 .count{display:flex;align-items:center;gap:12px;margin-top:16px}
 .hero .srow{display:flex;align-items:center;gap:13px;margin-top:16px}
@@ -242,7 +250,9 @@ function render() {
   $('eye').classList.toggle('asleep', a.label === 'Asleep');    // and shuts while the Mac sleeps
   if (!sleptAt) $('sleep-b').hidden = a.label === 'Asleep';     // already asleep: nothing to send
   $('state').textContent = a.label || (a.awake ? 'Awake' : 'Idle');
-  $('state').className = 'state' + (a.label === 'Awake' ? ' live' : a.inUse ? ' use' : '');
+  $('state').className = 'state' + (a.label === 'Awake' ? ' live' : a.label === 'Idling' ? ' idle' : a.inUse ? ' use' : '');
+  $('eye').classList.toggle('idling', a.label === 'Idling');
+  $('count').classList.toggle('idle', a.label === 'Idling');
   $('why').textContent = a.why; $('why').hidden = !a.why;
   // battery
   const low = !b.pluggedIn && b.pct <= 20;
