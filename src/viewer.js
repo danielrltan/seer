@@ -52,12 +52,12 @@ body.short-vp #app{padding-bottom:10px}
   box-shadow:0 0 0 .5px rgba(255,255,255,.17),0 18px 44px rgba(0,0,0,.7)}
 #wrap{transform-origin:0 0}
 canvas{display:block}
-/* The Mac's pointer, drawn over as a solid green arrow with the Mac arrow's own angles (Figma-style): its tip is the
-   pointer's tip, so it covers the small real one exactly. A ring spreads where a click lands. Drawn on the phone at
+/* The Mac's pointer, drawn over as a small solid green arrowhead, Figma-style (no tail, the Mac arrow's 45° wing):
+   its tip is the pointer's tip, so it covers the small real one. A ring spreads where a click lands. Drawn on the phone at
    the position the Mac reports; the Mac's own cursor is unchanged. */
-#halo{position:absolute;left:0;top:0;width:13px;height:20px;transform-origin:0 0;overflow:visible;pointer-events:none;z-index:2;opacity:0;
+#halo{position:absolute;left:0;top:0;width:9px;height:11px;transform-origin:0 0;overflow:visible;pointer-events:none;z-index:2;opacity:0;
   filter:drop-shadow(0 1px 2px rgba(0,0,0,.45)) drop-shadow(0 0 5px var(--glow));transition:opacity .35s}
-#halo path{fill:var(--live);stroke:var(--live);stroke-width:1.3;stroke-linejoin:round}   /* the stroke only rounds and fills out the shape, all green */
+#halo path{fill:var(--live);stroke:var(--live);stroke-width:1;stroke-linejoin:round}   /* the stroke only rounds the corners, all green */
 #halo.on{opacity:1}#halo.on.rest{opacity:.7}
 .ripple{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;pointer-events:none;z-index:2;
   border:2.5px solid var(--live);box-shadow:0 0 10px var(--glow);animation:ripple .5s cubic-bezier(.2,.7,.3,1) forwards}
@@ -129,7 +129,7 @@ canvas{display:block}
 }
 </style></head><body>
 <div id="app">
-<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><svg id="halo" viewBox="0 0 13 20" aria-hidden="true"><path d="M0 0V16.2L3.9 12.6L6.6 18.9L9.3 17.8L6.7 11.7H12Z"/></svg><div id="msg" class="glass">Connecting</div></div>
+<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><svg id="halo" viewBox="0 0 9 11" aria-hidden="true"><path d="M0 0V11L3 8.3H8.3Z"/></svg><div id="msg" class="glass">Connecting</div></div>
 <div id="pad" class="glass"><i class="groove l" id="groove-l"></i><i class="groove r" id="groove-r"></i></div>
 <div id="foot">
 <div id="keys" class="glass">${KEYS.map(([k, l]) => `<button class="key" data-key="${k}" aria-label="${k}">${l}</button>`).join('')}</div>
