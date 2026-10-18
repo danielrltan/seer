@@ -56,7 +56,7 @@ export default {
     if (reset) { res = new Response(res.body, res); res.headers.append('set-cookie', 'seer_view=; Path=/; Max-Age=0; Secure; SameSite=Lax'); }
     if (!(res.headers.get('content-type') || '').includes('text/html')) return res;
     if (desktop && dest === 'iframe') return new HTMLRewriter().on('head', { element: e => e.prepend((mode === 'tablet' ? TABLET_SHIM : LAPTOP_SHIM) + (lite ? LITE_SHIM : ''), { html: true }) }).transform(res);
-    if (!desktop && (dest === 'document' || !dest)) return new HTMLRewriter().on('body', { element: e => e.append(VIEW_BUTTON, { html: true }) }).transform(res);
+    if (!desktop && (dest === 'document' || !dest)) return new HTMLRewriter().on('body', { element: e => e.append(viewButton(macView), { html: true }) }).transform(res);
     return res;
   },
 };
@@ -142,11 +142,13 @@ const LITE_SHIM = `<script>(() => {
   def(navigator, 'deviceMemory', 2); def(navigator, 'hardwareConcurrency', 2);
 })();</script>`;
 
-// The switch to desktop view: one small eye in the corner, in its own shadow root so the project's CSS
+// The switch to desktop view (for a live Mac link, straight to the Mac view: rendered by the Mac, it cannot run
+// the phone out of memory): one small eye in the corner, in its own shadow root so the project's CSS
 // cannot touch it (and it cannot touch the project's).
-const VIEW_BUTTON = `<div id="seer-view-switch"></div><script>(() => {
+const viewButton = macView => `<div id="seer-view-switch"></div><script>(() => {
   const host = document.getElementById('seer-view-switch'), root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = '<style>a{position:fixed;left:calc(10px + env(safe-area-inset-left));bottom:calc(10px + env(safe-area-inset-bottom));z-index:2147483647;width:36px;height:36px;border-radius:18px;background:rgba(10,10,10,.8);border:1px solid #262626;display:flex;align-items:center;justify-content:center;opacity:.75}</style>'
     + '<a aria-label="Desktop view"><svg width="20" height="13" viewBox="0 0 22 14"><path d="M1 7C4 2 7.5 1 11 1s7 1 10 6c-3 5-6.5 6-10 6S4 12 1 7Z" fill="none" stroke="#ededed" stroke-width="1.4"/><circle cx="11" cy="7" r="2.6" fill="#00e676"/></svg></a>';
-  root.querySelector('a').onclick = () => { location.href = '/__seer/desktop?path=' + encodeURIComponent(location.pathname + location.search + location.hash); };
+  const here = encodeURIComponent(location.pathname + location.search + location.hash);
+  root.querySelector('a').onclick = () => { location.href = ${macView ? JSON.stringify(macView + '&path=') + ' + here' : "'/__seer/desktop?path=' + here"}; };
 })();</script>`;

@@ -107,8 +107,11 @@ const server = http.createServer(async (req, res) => {
     // Mac view. With the screen stream on: a real Chrome window on the Mac, shown through the stream cropped to it
     // (/render/open opens it). Without: headless Chrome frames (/render/ws).
     if (url.pathname === '/render') {
-      const page = loadConfig().desktop ? desktopPage({ wsPath: '/desktop/ws', dock: false, title: 'Mac view', openPath: '/render/open' })
-        : desktopPage({ wsPath: '/render/ws', dock: false, title: 'Mac view' });
+      // Back goes to the project's own page (phone view) that the eye was tapped on.
+      const host = url.searchParams.get('host') || '', p = url.searchParams.get('path') || '/';
+      const backHref = /^seer-[a-z0-9-]+\./.test(host) && p.startsWith('/') && !p.startsWith('//') ? `https://${host}${p}` : '/';
+      const page = loadConfig().desktop ? desktopPage({ wsPath: '/desktop/ws', dock: false, title: 'Mac view', openPath: '/render/open', backHref })
+        : desktopPage({ wsPath: '/render/ws', dock: false, title: 'Mac view', backHref });
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return res.end(page);
     }

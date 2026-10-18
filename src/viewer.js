@@ -3,7 +3,7 @@
 // opts: wsPath (the socket; the page's own query string is passed on), dock (the Dock button), title.
 // openPath: POSTed first (with the page's query string); its { crop } (fractions of the screen) limits the view
 // to that part of the screen, and taps map into it (the Mac view's window).
-export function desktopPage({ wsPath = '/desktop/ws', dock = true, title = 'Seer', openPath = null } = {}) {
+export function desktopPage({ wsPath = '/desktop/ws', dock = true, title = 'Seer', openPath = null, backHref = '/' } = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>${title}</title>
@@ -52,7 +52,7 @@ body.kb-up.keys-open #stage{bottom:50px}
 }
 </style></head><body>
 <div id="app">
-<div id="bar"><a href="/" aria-label="Back">&larr;</a><span id="dot"></span><span id="msg">Connecting</span>
+<div id="bar"><a href="${backHref.replace(/"/g, '&quot;')}" aria-label="Back">&larr;</a><span id="dot"></span><span id="msg">Connecting</span>
 <button id="kb" aria-label="Keyboard">&#9000;</button>${dock ? '<button id="dock" aria-label="Show the Dock">Dock</button>' : ''}<button id="fit" aria-label="Fit to screen">1:1</button></div>
 <div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div></div>
 <div id="keys">
