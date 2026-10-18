@@ -1,6 +1,5 @@
 // What keeps the Mac awake (with away mode on), so it sleeps whenever nothing needs it:
 //   stay awake             the owner asked from Seer home (the slider): until that time, whatever else is true
-//   plugged in             always (battery is not the concern)
 //   an agent is working    Claude Code hooks: busy on each prompt (UserPromptSubmit), waiting when it needs the
 //                          owner (Notification: a permission prompt or a question), idle when it stops (Stop)
 //   you are watching       a desktop stream or Mac view viewer, or Seer home being opened
@@ -56,7 +55,6 @@ export function awakeReason({ pluggedIn, watching }) {
   const stayUntil = cfg.stayAwakeUntil > now ? cfg.stayAwakeUntil : 0;
   const clock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const why = stayUntil ? `staying awake until ${clock(stayUntil)}`
-    : pluggedIn ? 'plugged in'
     : watching ? 'you are watching'
     : a.busy ? `${a.busy} agent${a.busy > 1 ? 's' : ''} working`
     : now < until ? `${a.waiting ? 'an agent is waiting for you, ' : ''}reachable for ${Math.ceil((until - now) / 60_000)} more min`

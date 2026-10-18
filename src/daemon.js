@@ -12,6 +12,7 @@ import { reconcile, release, failover, battery } from './awake.js';
 import { awakeReason, seen } from './activity.js';
 import { macStatus, lid, sampleBattery } from './macstatus.js';
 import { homePage } from './home.js';
+import { sleepDisplay, freezeApps, thawAll, frozenCount } from './headless.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
 import { WebSocketServer } from 'ws';
@@ -169,6 +170,9 @@ const server = http.createServer(async (req, res) => {
       await tick();
       return json(200, { stayUntil: loadConfig().stayAwakeUntil || 0 });
     }
+    if (url.pathname === '/kick' && req.method === 'POST' && !req.headers['cf-connecting-ip'] && req.socket.remoteAddress === '127.0.0.1') {
+      tick(); res.writeHead(204); return res.end();
+    }
     if (url.pathname === '/ping') { res.writeHead(204, { 'cache-control': 'no-store' }); return res.end(); }
     if (url.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(await statusJson())); }
     if (url.pathname === '/s/check') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(checkPage()); }
@@ -211,10 +215,14 @@ server.on('upgrade', async (req, socket, head) => {
 // Hold the Mac awake while something needs it (activity.js: plugged in, an agent working, someone watching, or
 // the reachable window after those) and let it sleep otherwise. caffeinate covers an open lid; away mode
 // (awake.js) covers a closed one and fails over to the hotspot when the Wi-Fi goes.
-let awake = null, running = false, windowSince = 0, why = { awake: false, why: 'starting' }, lidState = 'unknown', headless = false, netTick = 0;
+let awake = null, running = false, windowSince = 0, why = { awake: false, why: 'starting' }, lidState = 'unknown', headless = false, netTick = 0, lastLid = 'unknown', lastDark = 0, ticking = false;
 const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
 const checkNetwork = failover(log);
 async function tick() {
+  if (ticking) return; ticking = true;
+  try { await tickOnce(); } finally { ticking = false; }
+}
+async function tickOnce() {
   const b = await battery().catch(() => ({ onBattery: false, pct: 100 }));
   const watching = viewerCount() > 0 || windowOpen();
   why = awakeReason({ pluggedIn: !b.onBattery, watching });
@@ -222,6 +230,14 @@ async function tick() {
   // Headless: lid closed, nobody streaming, no agent working. The Mac only waits, so it saves all it can.
   lidState = await lid().catch(() => 'unknown');
   headless = running && lidState === 'closed' && !watching && !why.agentsBusy;
+  // Headless actions: screen off on closing; heavy apps frozen while it waits, thawed for an agent, a viewer or
+  // an open lid. Also when the Mac is about to sleep (nothing needs it) nothing stays frozen across the sleep.
+  const shut = lidState === 'closed' && !watching;
+  if (shut && lastLid !== 'closed') sleepDisplay();
+  if (shut && Date.now() - lastDark > 60_000) { sleepDisplay(); lastDark = Date.now(); }
+  if (headless && loadConfig().freezeApps !== false) await freezeApps(log).catch(e => log(`freeze: ${e.message}`));
+  else if (frozenCount()) await thawAll(log).catch(e => log(`thaw: ${e.message}`));
+  lastLid = lidState;
   if (running && !awake) {
     awake = spawn('/usr/bin/caffeinate', ['-is'], { stdio: 'ignore' });
     awake.on('exit', () => { awake = null; });
@@ -236,6 +252,9 @@ async function tick() {
   if (windowOpen() && viewerCount() === 0 && Date.now() - windowSince > 120_000) closeWindow(log);
 }
 setInterval(tick, 15_000);
+// The lid, every 3 s: closing it should turn the screen off and settle the Mac now, not at the next 15 s tick.
+setInterval(async () => { if ((await lid().catch(() => lidState)) !== lidState) tick(); }, 3_000);
+thawAll(log).catch(() => {});                                        // a crash or restart never leaves apps frozen
 // The network check (hotspot failover): every 5 s while the lid is closed and the Mac is in use; every 30 s when
 // headless (it only waits) or the lid is open (someone is at it).
 setInterval(() => {
@@ -243,4 +262,4 @@ setInterval(() => {
   checkNetwork(running && !!loadConfig().away).catch(e => log(`failover: ${e.message}`));
 }, 5_000);
 tick();
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { awake?.kill(); await release().catch(() => {}); process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { awake?.kill(); await thawAll(log).catch(() => {}); await release().catch(() => {}); process.exit(0); });
