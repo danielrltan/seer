@@ -285,7 +285,7 @@ function render() {
   $('ag-badge').className = 'badge' + (waiting ? ' amber' : '');
   $('agents').innerHTML = ag.length ? ag.map(g => '<div class="proj mon agent' + (g.busy ? ' live' : '') + '"><span class="ic">' + (AGENT[g.kind] || AGENT.other)
     + '<i class="pip ' + (g.waiting ? 'amber' : g.busy ? 'on pulse' : '') + '"></i></span>'
-    + '<div class="main"><div class="nm">' + esc(g.name) + '</div><div class="meta">' + esc([g.waiting ? 'needs you' : g.busy ? 'working' : 'idle ' + ago(g.since), g.dir].filter(Boolean).join(' · ')) + '</div></div>'
+    + '<div class="main"><div class="nm">' + esc(g.name) + '</div><div class="meta">' + esc([g.waiting ? 'needs you' : g.busy ? 'active' : 'idle ' + ago(g.since), g.dir].filter(Boolean).join(' · ')) + '</div></div>'
     + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View${BTN.open}</a>'
       : '<button class="btn view off" data-tip="Turn on Remote Control in this session to view it" aria-label="View: Remote Control is off">View${BTN.info}</button>') + '</div>').join('') : '<p class="empty">no agents</p>';
   // projects
