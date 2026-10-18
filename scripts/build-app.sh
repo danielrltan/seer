@@ -4,7 +4,7 @@
 #   Contents/Resources/bin/node      the Node runtime (Apple-silicon slice only)
 #   Contents/Resources/bin/cloudflared
 #   Contents/Resources/seer/         Seer's own code (bin, src, assets, node_modules)
-# Usage: scripts/build-app.sh [--install]   (--install replaces /Applications/Seer.app and deploys the code)
+# Usage: scripts/build-app.sh [--install]   (--install replaces /Applications/Seer.app, deploys the code and reopens it)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT="build/Seer.app"
@@ -78,4 +78,5 @@ if [ "${1:-}" = "--install" ]; then
   xattr -cr /Applications/Seer.app
   echo "installed /Applications/Seer.app"
   "$(dirname "$0")/deploy-code.sh" --no-restart
+  open -a /Applications/Seer.app && echo "reopened Seer"
 fi
