@@ -22,8 +22,16 @@ ${appHead}
    and then */
 .state.idle{color:var(--amber);animation:idle 3.2s ease-in-out infinite}
 @keyframes idle{50%{opacity:.55;text-shadow:0 0 22px rgba(255,196,77,.35)}}
-.eye.big.idling .open{animation:blink 4.6s ease-in-out infinite}
-@keyframes blink{0%,84%,92%,100%{transform:none}86%,90%{transform:scaleY(.08)}88%{transform:scaleY(.9)}}
+/* a drowsy double blink every 5.6 s: the lid falls in 180 ms, rests shut, lifts slowly and not quite all the way,
+   falls again, then opens heavily (closing eases in, opening eases out) */
+.eye.big.idling .open{animation:blink 5.6s infinite}
+@keyframes blink{
+  0%,76.8%{transform:none;animation-timing-function:cubic-bezier(.55,0,.9,.6)}
+  80%,81.4%{transform:scaleY(.06);animation-timing-function:cubic-bezier(.2,.5,.4,1)}
+  86.8%{transform:scaleY(.82);animation-timing-function:cubic-bezier(.55,0,.9,.6)}
+  89.6%,90.7%{transform:scaleY(.06);animation-timing-function:cubic-bezier(.15,.55,.35,1)}
+  97.1%,100%{transform:none}
+}
 .eye.big.idling #pupil{stroke:var(--amber);transition:stroke .4s}
 #count.idle .track i{background:var(--amber);box-shadow:0 0 12px rgba(255,196,77,.4)}
 @media (prefers-reduced-motion: reduce){.state.idle,.eye.big.idling .open{animation:none}}
