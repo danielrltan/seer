@@ -18,7 +18,7 @@ import { settingsPage } from './settingspage.js';
 import { settings, applySettings, FREEZABLE } from './settings.js';
 import { hooksInstalled, installHooks } from './hooks.js';
 import { runningAgents } from './agents.js';
-import { ICON_V, ICON_HEAD, iconCache, FONT_V } from './icons.js';
+import { ICON_V, ICON_HEAD, iconCache, FONT_V, MANIFEST } from './icons.js';
 import { sleepDisplay, freezeApps, thawAll, frozenCount, muteOutput, unmuteOutput } from './headless.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
@@ -144,14 +144,9 @@ const server = http.createServer(async (req, res) => {
       log('stream check from a browser:\n' + body.slice(0, 4000));
       res.writeHead(204); return res.end();
     }
-    // Home-screen app: opened from its icon, iOS shows Seer with no browser bars (a page cannot hide them itself).
     if (url.pathname === '/manifest.webmanifest') {
-      res.writeHead(200, { 'content-type': 'application/manifest+json' });
-      return res.end(JSON.stringify({
-        name: 'Seer', short_name: 'Seer', start_url: '/desktop', scope: '/', display: 'standalone', orientation: 'any',
-        background_color: '#000000', theme_color: '#000000',
-        icons: [{ src: `/icon-192.png?v=${ICON_V}`, sizes: '192x192', type: 'image/png' }, { src: `/icon-512.png?v=${ICON_V}`, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
-      }));
+      res.writeHead(200, { 'content-type': 'application/manifest+json', 'cache-control': 'no-cache' });
+      return res.end(MANIFEST);
     }
     // Icons, favicon and manifest are the only paths open without sign-in (a Cloudflare Access bypass, `seer
     // public assets`): iOS fetches a home-screen icon without the login, so behind it the icon never loaded.
