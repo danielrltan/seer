@@ -1,5 +1,5 @@
 // Seer home, styled as a small mission-control panel (after Tonik's Supabase Launch Week 14 work: phosphor
-// green line instruments, terminal readouts, corner-bracketed viewports, boarding-pass tickets, grain and grid).
+// green line instruments, terminal readouts, corner-bracketed viewports, a tunnel receding into the dark, grain).
 // Labels stay lowercase and every element carries information: no taglines, no coaching copy.
 // The page renders itself from the status JSON and refreshes every 5 s; ping is timed from the phone.
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -12,7 +12,7 @@ ${appHead}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=VT323&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#050605;--panel:#0a0c0a;--line:#1d231d;--line-hi:#2c352c;--ink:#e8ede8;--quiet:#8a948a;--dim:#4d564d;
+  --bg:#030403;--panel:rgba(9,12,9,.86);--line:#1d231d;--line-hi:#2c352c;--ink:#e8ede8;--quiet:#8a948a;--dim:#4d564d;
   --live:#00e676;--glow:rgba(0,230,118,.35);--vignette:rgba(0,0,0,.35);--amber:#ffc53d;--amber-dim:rgba(255,197,61,.12);--red:#ff4d4f;
   --mono:'Geist Mono',ui-monospace,monospace;--pix:'VT323','Geist Mono',monospace;
 }
@@ -20,12 +20,17 @@ ${appHead}
 [hidden]{display:none!important}
 html{background:var(--bg);color-scheme:dark}
 body{margin:0;min-height:100vh;color:var(--ink);font:15px/1.45 Geist,-apple-system,system-ui,sans-serif;
-  background:
-    radial-gradient(120% 70% at 50% 0%,transparent 40%,var(--vignette) 100%),
-    linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 48px,
-    linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/48px 100%,
-    var(--bg);
-  background-attachment:fixed}
+  background:transparent}
+/* The tunnel (after Supabase LW14): frames shrinking into a dark void, lines to the vanishing point. The frames
+   drift forward by one ring every 7 s and loop seamlessly; only a transform moves, so it stays on the GPU. */
+.tunnel{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;
+  -webkit-mask:radial-gradient(closest-side at 50% 46%,transparent 0,#000 75%);mask:radial-gradient(closest-side at 50% 46%,transparent 0,#000 75%)}
+.tunnel svg{position:absolute;inset:0;width:100%;height:100%}
+.tunnel line,.tunnel rect{vector-effect:non-scaling-stroke}
+.tunnel .fly{position:absolute;inset:0;transform-origin:50% 46%;animation:fly 7s linear infinite;will-change:transform}
+@keyframes fly{to{transform:scale(1.4286)}}
+@media (prefers-reduced-motion: reduce){.tunnel .fly{animation:none}}
+.tunnel:after{content:'';position:absolute;inset:0;background:radial-gradient(130% 90% at 50% 46%,transparent 45%,rgba(0,0,0,.55) 100%)}
 body:after{content:'';position:fixed;inset:0;pointer-events:none;opacity:.07;mix-blend-mode:overlay;
   background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")}
 main{max-width:520px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom))}
@@ -33,6 +38,10 @@ a{color:inherit;text-decoration:none}
 .mono{font-family:var(--mono)}
 /* header */
 header{display:flex;align-items:center;gap:10px;padding:6px 2px 18px}
+#pupil{transform-box:view-box;transform-origin:512px 512px}
+#pupil.spin{animation:spin 1s steps(8) infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){#pupil.spin{animation:none}}
 header .word{font:600 17px/1 var(--mono);letter-spacing:-.02em}
 header .clock{margin-left:auto;font:400 13px var(--mono);color:var(--quiet);font-variant-numeric:tabular-nums}
 .link{display:inline-flex;align-items:center;gap:6px;font:400 12px var(--mono);color:var(--quiet)}
@@ -77,25 +86,23 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.5;filter:drop-sha
 .stay .ticks{display:flex;justify-content:space-between;font:400 10px var(--mono);color:var(--dim)}
 .btn{height:36px;padding:0 14px;border:1px solid var(--live);background:transparent;color:var(--live);font:500 13px var(--mono);cursor:pointer}
 .btn.ghost{border-color:var(--line-hi);color:var(--ink)}
-/* help: amber ticket */
+/* help: amber note, only when something needs the owner */
 .help{display:flex;gap:10px;align-items:flex-start;padding:12px 13px;margin-bottom:10px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--ink);font-size:14px}
 .help b{font:600 12px var(--mono);color:var(--amber);flex:none;margin-top:2px}
 /* projects: boarding passes */
 .sect{display:flex;align-items:center;gap:10px;margin:22px 2px 10px}.sect .k{flex:none}.sect hr{flex:1;border:0;border-top:1px solid var(--line-hi);margin:0}
-.ticket{display:flex;align-items:stretch;margin-bottom:16px;background:var(--panel);border:1px solid var(--line);position:relative}
-.ticket .main{flex:1;min-width:0;padding:12px 14px}
-.ticket .nm{font:500 17px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ticket .meta{display:flex;gap:14px;margin-top:8px;font:400 11px var(--mono);color:var(--quiet)}
-.ticket .meta span b{display:block;font-weight:500;color:var(--ink);font-size:12px}
-.ticket .stub{width:74px;flex:none;border-left:1px dashed var(--line-hi);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;position:relative}
-.ticket .stub:before,.ticket .stub:after{content:'';position:absolute;left:-7px;width:13px;height:13px;border-radius:50%;background:var(--bg);border:1px solid var(--line)}
-.ticket .stub:before{top:-7px}.ticket .stub:after{bottom:-7px}
-.bars{width:40px;height:22px;background:repeating-linear-gradient(90deg,var(--ink) 0 1px,transparent 1px 3px,var(--ink) 3px 5px,transparent 5px 6px,var(--ink) 6px 7px,transparent 7px 10px);opacity:.55}
-.ticket .st{font:400 11px var(--mono);color:var(--quiet)}
+.proj{display:flex;align-items:center;gap:12px;margin-bottom:8px;padding:12px 14px;background:var(--panel);border:1px solid var(--line)}
+.proj:active{border-color:var(--line-hi)}
+.proj .main{flex:1;min-width:0}
+.proj .nm{font:500 16px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj .meta{margin-top:4px;font:400 12px var(--mono);color:var(--quiet)}
+.proj .go{color:var(--dim);font:400 18px var(--mono)}
 .empty{font:400 13px var(--mono);color:var(--quiet);padding:8px 2px}
-</style></head><body><main>
+</style></head><body>
+<div class="tunnel" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><g fill="none" stroke="#00e676" stroke-opacity=".20" stroke-width="1" vector-effect="non-scaling-stroke"><line x1="0" y1="0" x2="50" y2="46"/><line x1="25" y1="0" x2="50" y2="46"/><line x1="50" y1="0" x2="50" y2="46"/><line x1="75" y1="0" x2="50" y2="46"/><line x1="100" y1="0" x2="50" y2="46"/><line x1="100" y1="25" x2="50" y2="46"/><line x1="100" y1="50" x2="50" y2="46"/><line x1="100" y1="75" x2="50" y2="46"/><line x1="100" y1="100" x2="50" y2="46"/><line x1="75" y1="100" x2="50" y2="46"/><line x1="50" y1="100" x2="50" y2="46"/><line x1="25" y1="100" x2="50" y2="46"/><line x1="0" y1="100" x2="50" y2="46"/><line x1="0" y1="75" x2="50" y2="46"/><line x1="0" y1="50" x2="50" y2="46"/><line x1="0" y1="25" x2="50" y2="46"/></g></svg><div class="fly"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><g fill="none" stroke="#00e676" stroke-opacity=".30" stroke-width="1" vector-effect="non-scaling-stroke"><rect x="0.00" y="-3.68" width="100.00" height="108.00"/><rect x="15.00" y="11.22" width="70.00" height="75.60"/><rect x="25.50" y="21.66" width="49.00" height="52.92"/><rect x="32.85" y="28.96" width="34.30" height="37.04"/><rect x="38.00" y="34.07" width="24.01" height="25.93"/><rect x="41.60" y="37.65" width="16.81" height="18.15"/><rect x="44.12" y="40.16" width="11.76" height="12.71"/><rect x="45.88" y="41.91" width="8.24" height="8.89"/><rect x="47.12" y="43.14" width="5.76" height="6.23"/><rect x="47.98" y="44.00" width="4.04" height="4.36"/></g></svg></div></div>
+<main>
 <header>
-  <svg width="26" height="16" viewBox="0 0 22 14" aria-hidden="true"><path d="M1 7C4 2 7.5 1 11 1s7 1 10 6c-3 5-6.5 6-10 6S4 12 1 7Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="7" r="2.6" fill="var(--live)"/></svg>
+  <svg class="mark" width="32" height="23" viewBox="120 232 784 560" aria-hidden="true"><path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z" fill="none" stroke="currentColor" stroke-width="48" stroke-linejoin="round"/><g id="pupil" stroke="var(--live)" stroke-width="50" stroke-linecap="round"><line x1="512" y1="442" x2="512" y2="342" stroke-opacity="1.00"/><line x1="561" y1="463" x2="632" y2="392" stroke-opacity="0.25"/><line x1="582" y1="512" x2="682" y2="512" stroke-opacity="0.35"/><line x1="561" y1="561" x2="632" y2="632" stroke-opacity="0.46"/><line x1="512" y1="582" x2="512" y2="682" stroke-opacity="0.57"/><line x1="463" y1="561" x2="392" y2="632" stroke-opacity="0.68"/><line x1="442" y1="512" x2="342" y2="512" stroke-opacity="0.79"/><line x1="463" y1="463" x2="392" y2="392" stroke-opacity="0.89"/></g></svg>
   <span class="word">seer</span>
   <span class="clock" id="clock"></span>
 </header>
@@ -150,6 +157,7 @@ function tick() {                                       // the clock and the cou
 
 function render() {
   const a = st.awake, b = st.battery, n = st.network, h = st.hotspot;
+  $('pupil').classList.toggle('spin', !!st.agentsBusy);           // the logo's pupil turns while an agent works
   $('state').textContent = a.awake ? (a.headless ? 'headless' : 'awake') : 'will sleep';
   $('state').className = 'state' + (a.awake ? '' : ' off');
   $('why').textContent = a.why + (st.agentsBusy && !/agent/.test(a.why) ? ', ' + st.agentsBusy + ' agent' + (st.agentsBusy > 1 ? 's' : '') + ' working' : '') + (a.headless ? ', saving power' : '');
@@ -181,10 +189,9 @@ function render() {
   const rows = (st.desktop ? [{ name: 'desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
     const live = p.state === 'running' || p.state === 'on demand' || p.state === 'streamed';
-    return '<a class="ticket" href="' + esc(p.href) + '"><div class="main"><div class="nm">' + esc(p.name) + '</div><div class="meta">'
-      + '<span>runs<b>' + esc(p.where === 'cloud' ? 'cloud' : p.where === 'screen' ? 'mac screen' : 'this mac') + '</b></span>'
-      + '<span>state<b>' + esc(p.state) + '</b></span></div></div>'
-      + '<div class="stub"><span class="pip ' + (live ? 'on' : p.state === 'failed' ? 'red' : '') + '"></span><span class="bars"></span></div></a>';
+    return '<a class="proj" href="' + esc(p.href) + '"><span class="pip ' + (live ? 'on' : p.state === 'failed' ? 'red' : '') + '"></span>'
+      + '<div class="main"><div class="nm">' + esc(p.name) + '</div><div class="meta">' + esc(p.where === 'cloud' ? 'cloud' : p.where === 'screen' ? 'mac screen' : 'this mac') + ' · ' + esc(p.state) + '</div></div>'
+      + '<span class="go">→</span></a>';
   }).join('') : '<p class="empty">no previews running</p>';
   tick();
 }

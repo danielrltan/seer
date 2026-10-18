@@ -59,7 +59,7 @@ pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;p
 `;
 const EYE = `<svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true"><path d="M1 7C4 2 7.5 1 11 1s7 1 10 6c-3 5-6.5 6-10 6S4 12 1 7Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="7" r="2.6" fill="#00e676"/></svg>`;
 
-export const APP_HEAD = `<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials"><link rel="apple-touch-icon" href="/icon-180.png">
+export const APP_HEAD = `<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/icon-32.png" sizes="32x32" type="image/png">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Seer"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`;
 
 function page(title, body) {
@@ -124,7 +124,11 @@ const server = http.createServer(async (req, res) => {
         icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }, { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
       }));
     }
-    const icon = url.pathname.match(/^\/icon-(180|192|512)\.png$/);
+    // Icons, favicon and manifest are the only paths open without sign-in (a Cloudflare Access bypass, `seer
+    // public assets`): iOS fetches a home-screen icon without the login, so behind it the icon never loaded.
+    if (url.pathname === '/favicon.svg') { res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400' }); return res.end(fs.readFileSync(new URL('../assets/logo/seer-icon.svg', import.meta.url))); }
+    if (url.pathname === '/favicon.ico') { res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' }); return res.end(fs.readFileSync(new URL('../assets/icon-32.png', import.meta.url))); }
+    const icon = url.pathname.match(/^\/icon-(32|180|192|512)\.png$/);
     if (icon) {
       res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' });
       return res.end(fs.readFileSync(new URL(`../assets/icon-${icon[1]}.png`, import.meta.url)));

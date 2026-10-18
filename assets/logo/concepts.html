@@ -1,0 +1,72 @@
+<!doctype html><html><head><style>
+body{margin:0;background:#111;display:flex;gap:40px;padding:40px;font:14px ui-monospace,monospace;color:#8a948a}
+figure{margin:0;text-align:center}svg{width:300px;height:300px;border-radius:66px;display:block;margin-bottom:12px}
+</style></head><body>
+
+<!-- A: viewfinder eye. HUD corner brackets frame an almond eye; the pupil is a phosphor radar with a sweep -->
+<figure><svg viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bgA" cx="50%" cy="40%" r="75%"><stop offset="0" stop-color="#0f1a12"/><stop offset="1" stop-color="#030503"/></radialGradient>
+    <radialGradient id="glowA"><stop offset="0" stop-color="#00e676" stop-opacity=".55"/><stop offset="1" stop-color="#00e676" stop-opacity="0"/></radialGradient>
+    <linearGradient id="sweepA" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00e676" stop-opacity="0"/><stop offset="1" stop-color="#00e676" stop-opacity=".75"/></linearGradient>
+    <clipPath id="eyeA"><path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bgA)"/>
+  <g stroke="#00e676" stroke-width="22" fill="none" stroke-linecap="square">
+    <path d="M120 250V120h130"/><path d="M904 250V120H774"/><path d="M120 774v130h130"/><path d="M904 774v130H774"/>
+  </g>
+  <path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z" fill="none" stroke="#e8ede8" stroke-width="26" stroke-linejoin="round"/>
+  <g clip-path="url(#eyeA)">
+    <circle cx="512" cy="512" r="330" fill="url(#glowA)"/>
+    <circle cx="512" cy="512" r="150" fill="#04140a" stroke="#00e676" stroke-width="10"/>
+    <circle cx="512" cy="512" r="100" fill="none" stroke="#00e676" stroke-opacity=".45" stroke-width="5"/>
+    <circle cx="512" cy="512" r="52" fill="none" stroke="#00e676" stroke-opacity=".45" stroke-width="5"/>
+    <path d="M512 512L662 512A150 150 0 0 0 618 406Z" fill="url(#sweepA)"/>
+    <path d="M512 362V662M362 512H662" stroke="#00e676" stroke-opacity=".35" stroke-width="4"/>
+    <circle cx="590" cy="452" r="14" fill="#c8ffe0"/>
+  </g>
+</svg><figcaption>A · viewfinder radar eye</figcaption></figure>
+
+<!-- B: pixel eye. Phosphor pixel art with scanlines, like the VT323 readouts -->
+<figure><svg viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <defs><pattern id="scan" width="1" height="1" patternUnits="userSpaceOnUse"><rect width="1" height=".5" fill="#000" fill-opacity=".28"/></pattern>
+    <filter id="bloom"><feGaussianBlur stdDeviation=".45"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <rect width="32" height="32" fill="#040704"/>
+  <g filter="url(#bloom)" fill="#00e676">
+    <!-- outline of the eye, row by row -->
+    <rect x="11" y="9" width="10" height="1"/><rect x="8" y="10" width="3" height="1"/><rect x="21" y="10" width="3" height="1"/>
+    <rect x="6" y="11" width="2" height="1"/><rect x="24" y="11" width="2" height="1"/><rect x="4" y="12" width="2" height="1"/><rect x="26" y="12" width="2" height="1"/>
+    <rect x="3" y="13" width="1" height="3"/><rect x="28" y="13" width="1" height="3"/>
+    <rect x="4" y="16" width="2" height="1"/><rect x="26" y="16" width="2" height="1"/><rect x="6" y="17" width="2" height="1"/><rect x="24" y="17" width="2" height="1"/>
+    <rect x="8" y="18" width="3" height="1"/><rect x="21" y="18" width="3" height="1"/><rect x="11" y="19" width="10" height="1"/>
+    <!-- pupil -->
+    <rect x="14" y="11" width="4" height="1"/><rect x="13" y="12" width="6" height="4"/><rect x="14" y="16" width="4" height="1"/>
+  </g>
+  <rect x="16" y="12" width="2" height="2" fill="#d6ffe8"/>
+  <rect width="32" height="32" fill="url(#scan)"/>
+</svg><figcaption>B · pixel phosphor eye</figcaption></figure>
+
+<!-- C: scope eye. A round CRT oscilloscope; two traces draw the eye, the pupil is the beam dot -->
+<figure><svg viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="crt" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#0d2416"/><stop offset=".75" stop-color="#05110a"/><stop offset="1" stop-color="#010402"/></radialGradient>
+    <filter id="beam"><feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1024" height="1024" fill="#0b0c0b"/>
+  <circle cx="512" cy="512" r="410" fill="url(#crt)" stroke="#1f2a22" stroke-width="18"/>
+  <g stroke="#00e676" stroke-opacity=".14" stroke-width="4">
+    <path d="M152 512H872M512 152V872"/>
+    <path d="M232 422H792M232 602H792M422 232V792M602 232V792"/>
+  </g>
+  <g stroke="#00e676" stroke-opacity=".35" stroke-width="6">
+    <path d="M492 302h40M492 362h40M492 662h40M492 722h40M302 492v40M362 492v40M662 492v40M722 492v40"/>
+  </g>
+  <g filter="url(#beam)" fill="none" stroke="#5dffa8" stroke-width="16" stroke-linecap="round">
+    <path d="M190 512C300 340 400 300 512 300s212 40 322 212"/>
+    <path d="M190 512C300 684 400 724 512 724s212-40 322-212"/>
+  </g>
+  <circle cx="512" cy="512" r="74" fill="#00e676" filter="url(#beam)"/>
+  <circle cx="540" cy="488" r="18" fill="#e9fff2"/>
+</svg><figcaption>C · oscilloscope eye</figcaption></figure>
+
+</body></html>
