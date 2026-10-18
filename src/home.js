@@ -13,6 +13,7 @@ ${appHead}
 .hero .top{display:flex;justify-content:space-between;align-items:center}
 .state{font:700 46px/1 var(--round);letter-spacing:-.025em;margin:14px 0 6px;color:var(--ink2)}
 .state.live{color:var(--live);text-shadow:0 0 28px var(--glow)}
+.state.use{color:#fff}
 .why{font-size:15px;color:var(--ink2)}
 .count{display:flex;align-items:center;gap:12px;margin-top:16px}
 .count .t{font:700 20px/1 var(--round);font-variant-numeric:tabular-nums;min-width:70px}
@@ -90,7 +91,7 @@ function tick() {                                       // the clock and the cou
   const until = a.stayUntil || (a.awake && !st.agentsBusy && a.reachableUntil > now ? a.reachableUntil : 0);
   $('count').hidden = !until;
   if (until) {
-    $('count-k').textContent = a.stayUntil ? 'awake' : st.lid === 'closed' ? 'then sleeps' : 'then normal sleep';
+    $('count-k').textContent = a.stayUntil ? 'awake' : 'then sleeps';
     $('count-t').textContent = mmss(until - now);
     const span = a.stayUntil ? Math.max(a.stayUntil - (st.stayFrom || now), until - now) : 15 * 60_000;
     $('count-i').style.width = Math.max(2, Math.min(100, (until - now) / span * 100)) + '%';
@@ -100,8 +101,8 @@ function tick() {                                       // the clock and the cou
 function render() {
   const a = st.awake, b = st.battery, n = st.network, h = st.hotspot;
   $('pupil').classList.toggle('spin', !!st.agentsBusy);           // the logo's pupil turns while an agent works
-  $('state').textContent = a.awake ? (a.headless ? 'Headless' : 'Awake') : 'Will sleep';
-  $('state').className = 'state' + (a.awake ? ' live' : '');
+  $('state').textContent = a.awake ? (a.headless ? 'Headless' : 'Awake') : a.inUse ? 'In use' : st.lid === 'closed' ? 'Will sleep' : 'Normal sleep';
+  $('state').className = 'state' + (a.awake ? ' live' : a.inUse ? ' use' : '');
   $('why').textContent = a.why + (st.agentsBusy && !/agent/.test(a.why) ? ', ' + st.agentsBusy + ' agent' + (st.agentsBusy > 1 ? 's' : '') + ' working' : '') + (a.headless ? ', saving power' : '');
   // battery
   const low = !b.pluggedIn && b.pct <= 20;
@@ -120,7 +121,7 @@ function render() {
   // lid
   $('lid').textContent = st.lid === 'unknown' ? '—' : st.lid === 'closed' ? 'Closed' : 'Open';
   $('lap-screen').setAttribute('d', st.lid === 'closed' ? 'M4 18.5h28' : 'M7 3h22v14H7z');
-  $('lid-s').textContent = st.lid === 'closed' ? (a.awake ? 'awake anyway' : 'will sleep') : 'in use';
+  $('lid-s').textContent = st.lid === 'closed' ? (a.awake ? 'awake anyway' : a.inUse ? 'external display' : 'will sleep') : a.inUse ? 'in use' : 'idle';
   // stay awake
   $('stay-x').hidden = !a.stayUntil;
   $('stay-now').textContent = a.stayUntil ? 'until ' + clockOf(a.stayUntil) : '';

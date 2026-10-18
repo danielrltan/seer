@@ -10,7 +10,7 @@ import { cleanName, loadConfig, saveConfig } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover, battery, ruleInstalled, savePassword, hasPassword } from './awake.js';
 import { awakeReason, seen } from './activity.js';
-import { macStatus, lid, sampleBattery } from './macstatus.js';
+import { macStatus, lid, idleSeconds, sampleBattery } from './macstatus.js';
 import { homePage } from './home.js';
 import { settingsPage } from './settingspage.js';
 import { settings, applySettings, FREEZABLE } from './settings.js';
@@ -82,7 +82,7 @@ async function projects() {
   return out;
 }
 export async function statusJson() {
-  const st = await macStatus({ awake: { awake: why.awake, why: why.why, mode: away.mode, stayUntil: why.stayUntil || 0, reachableUntil: why.reachableUntil || 0, headless, pluggedIn: !away.battery?.onBattery }, agentsBusy: why.agentsBusy || 0 });
+  const st = await macStatus({ awake: { awake: why.awake, why: why.why, inUse: !!why.inUse, mode: away.mode, stayUntil: why.stayUntil || 0, reachableUntil: why.reachableUntil || 0, headless, pluggedIn: !away.battery?.onBattery }, agentsBusy: why.agentsBusy || 0 });
   return { ...st, projects: await projects(), desktop: !!loadConfig().desktop };
 }
 
@@ -276,14 +276,16 @@ async function tick() {
 async function tickOnce() {
   const b = await battery().catch(() => ({ onBattery: false, pct: 100 }));
   const watching = viewerCount() > 0 || windowOpen();
-  why = awakeReason({ pluggedIn: !b.onBattery, watching });
-  running = why.awake;
-  // Headless: lid closed, nobody streaming, no agent working. The Mac only waits, so it saves all it can.
+  // In use: a key, click or trackpad touch in the last 2 minutes (lid open, or closed on an external display).
   lidState = await lid().catch(() => 'unknown');
-  headless = running && lidState === 'closed' && !watching && !why.agentsBusy;
+  const idle = await idleSeconds().catch(() => null), inUse = idle !== null && idle < 120;
+  why = awakeReason({ watching, lidClosed: lidState === 'closed', inUse });
+  running = why.awake;
+  // Headless: lid closed, nobody streaming or at it, no agent working. The Mac only waits, so it saves all it can.
+  headless = running && lidState === 'closed' && !watching && !inUse && !why.agentsBusy;
   // Headless actions: screen off on closing; heavy apps frozen while it waits, thawed for an agent, a viewer or
   // an open lid. Also when the Mac is about to sleep (nothing needs it) nothing stays frozen across the sleep.
-  const set = settings(), shut = lidState === 'closed' && !watching && set.screenOff;
+  const set = settings(), shut = lidState === 'closed' && !watching && !inUse && set.screenOff;
   if (shut && lastLid !== 'closed') sleepDisplay();
   if (shut && Date.now() - lastDark > 60_000) { sleepDisplay(); lastDark = Date.now(); }
   if (headless && set.freeze) await freezeApps(log).catch(e => log(`freeze: ${e.message}`));

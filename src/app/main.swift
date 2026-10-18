@@ -115,7 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if status.isEmpty {
             menu.addItem(info("Starting…"))
         } else {
-            let state = (awake["awake"] as? Bool ?? false) ? ((awake["headless"] as? Bool ?? false) ? "Headless" : "Awake") : "Will sleep"
+            let state = (awake["awake"] as? Bool ?? false) ? ((awake["headless"] as? Bool ?? false) ? "Headless" : "Awake")
+                : (awake["inUse"] as? Bool ?? false) ? "In use" : (status["lid"] as? String) == "closed" ? "Will sleep" : "Normal sleep"
             menu.addItem(info("\(state): \(awake["why"] as? String ?? "")"))
             let kind = ["wifi": "Wi-Fi", "hotspot": "Hotspot", "wired": "Wired", "offline": "Offline"][net["kind"] as? String ?? ""] ?? "—"
             menu.addItem(info("Battery \(batt["pct"] as? Int ?? 0)%\((batt["pluggedIn"] as? Bool ?? false) ? ", plugged in" : "")  ·  \(kind)  ·  lid \(status["lid"] as? String ?? "?")"))

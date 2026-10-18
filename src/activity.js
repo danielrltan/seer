@@ -3,10 +3,13 @@
 //   an agent is working    Claude Code hooks: busy on each prompt (UserPromptSubmit), waiting when it needs the
 //                          owner (Notification: a permission prompt or a question), idle when it stops (Stop)
 //   you are watching       a desktop stream or Mac view viewer, or Seer home being opened
-//   the reachable window   reachableMin (15) minutes after the last of those, waiting included, so the owner can
-//                          answer or check; an agent stuck on a prompt no longer holds the Mac up for hours
-// After that the Mac sleeps. Nothing can wake a sleeping Mac from the phone; the window and the slider are the
-// answer. While awake with the lid closed and nobody watching, the Mac is "headless" and saves all it can.
+//   the reachable window   with the lid closed only: reachableMin (15) minutes after the last of those, waiting
+//                          included, so the owner can answer or check from the phone; an agent stuck on a prompt
+//                          no longer holds the Mac up for hours
+// Nothing else. With the lid open and none of these, Seer holds nothing and the Mac's own display and idle sleep
+// apply as if Seer were not there; someone at the keyboard is "in use", which the Mac handles itself.
+// Nothing can wake a sleeping Mac from the phone; the window and the slider are the answer. While awake with the
+// lid closed and nobody watching or at it, the Mac is "headless" and saves all it can.
 import fs from 'node:fs';
 import path from 'node:path';
 import { HOME, loadConfig } from './store.js';
@@ -46,8 +49,8 @@ function agents() {
   return out;
 }
 
-// { awake, why, agentsBusy, agentsWaiting, reachableUntil, stayUntil }
-export function awakeReason({ pluggedIn, watching }) {
+// { awake, why, inUse, agentsBusy, agentsWaiting, reachableUntil, stayUntil }
+export function awakeReason({ watching, lidClosed, inUse }) {
   const cfg = loadConfig(), set = settings(cfg), now = Date.now(), reachableMs = set.reachableMin * 60_000;
   if (watching) lastSeen = now;
   const a = agents();
@@ -59,7 +62,8 @@ export function awakeReason({ pluggedIn, watching }) {
   const why = stayUntil ? `staying awake until ${clock(stayUntil)}`
     : watching ? 'you are watching'
     : a.busy ? `${a.busy} agent${a.busy > 1 ? 's' : ''} working`
-    : now < until ? `${a.waiting ? 'an agent is waiting for you; ' : ''}kept awake ${Math.ceil((until - now) / 60_000)} more min after ${a.lastAt >= lastSeen ? 'the last agent' : 'you last checked'}`
+    : lidClosed && now < until ? `${a.waiting ? 'an agent is waiting for you; ' : ''}kept awake ${Math.ceil((until - now) / 60_000)} more min after ${a.lastAt >= lastSeen ? 'the last agent' : 'you last checked'}`
     : null;
-  return { awake: !!why, why: why || 'nothing needs it: sleeping to save battery', agentsBusy: a.busy, agentsWaiting: a.waiting, reachableUntil: last ? until : 0, stayUntil };
+  const idle = inUse ? 'you are using it' : lidClosed ? 'nothing needs it: sleeping to save battery' : 'nothing needs it: normal sleep';
+  return { awake: !!why, why: why || idle, inUse: !!inUse, agentsBusy: a.busy, agentsWaiting: a.waiting, reachableUntil: lidClosed && last ? until : 0, stayUntil };
 }

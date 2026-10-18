@@ -18,6 +18,13 @@ async function batteryDetail() {
   return { pct: b.pct, pluggedIn: !b.onBattery, state, remaining: left && left !== '0:00' ? left : null };
 }
 
+// Seconds since the last keyboard, mouse or trackpad input (the system's own HID idle clock); null if unknown.
+export async function idleSeconds() {
+  const out = await run('/usr/sbin/ioreg', ['-c', 'IOHIDSystem', '-d', '4', '-r', '-k', 'HIDIdleTime']);
+  const m = out.match(/"HIDIdleTime"\s*=\s*(\d+)/);
+  return m ? Number(m[1]) / 1e9 : null;
+}
+
 export async function lid() {
   const out = await run('/usr/sbin/ioreg', ['-r', '-k', 'AppleClamshellState', '-d', '4']);
   const m = out.match(/"AppleClamshellState"\s*=\s*(Yes|No)/);
