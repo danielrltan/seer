@@ -28,7 +28,7 @@ ${BACKDROP}
 const offline = () => navigator.onLine === false;
 function say() {
   document.getElementById('t').textContent = offline() ? "You're offline" : ${JSON.stringify(`Your ${model} is asleep`)};
-  document.getElementById('s').textContent = offline() ? 'Seer comes back when your phone is online.' : ${JSON.stringify(`Wake it on the ${model} itself: ${/MacBook/.test(model) ? 'open the lid or press a key' : 'press a key or move the mouse'}. Seer comes back on its own.`)};
+  document.getElementById('s').textContent = offline() ? 'Seer reconnects once you are.' : ${JSON.stringify(/MacBook/.test(model) ? 'Open the lid to wake it.' : 'Press a key to wake it.')};
 }
 say(); addEventListener('online', say); addEventListener('offline', say);
 // Back on its own: look every 20 s while the page is on screen, and reload once the Mac answers.
