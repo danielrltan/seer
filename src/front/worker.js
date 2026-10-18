@@ -93,6 +93,9 @@ const DESKTOP_SHIM = `<script>(() => {
   def(navigator, 'userAgent', ${JSON.stringify(DESKTOP_UA)}); def(navigator, 'platform', 'MacIntel');
   def(navigator, 'maxTouchPoints', 0); def(screen, 'width', ${WIDTH}); def(screen, 'height', ${HEIGHT});
   def(screen, 'availWidth', ${WIDTH}); def(screen, 'availHeight', 875);
+  // A laptop's hardware too: iPhones report 4 cores whatever they have, which desktop rules (as on
+  // danielrltan.com) read as a weak laptop and answer with their static fallbacks.
+  def(navigator, 'hardwareConcurrency', 8); def(navigator, 'deviceMemory', 8);
   def(window, 'devicePixelRatio', 1);   // a phone's 3x would make WebGL and canvases draw 9x the pixels of a laptop
   const mm = window.matchMedia.bind(window);
   window.matchMedia = q => mm(String(q)
