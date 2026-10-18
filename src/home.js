@@ -68,7 +68,7 @@ body.pushed .push .wait svg{opacity:1}
 ${BACKDROP}
 <main>
 <header class="glass bar">
-  ${MARK}
+  ${MARK.replace('class="eye"', 'class="eye" id="eye"')}
   <span class="word">seer</span>
   <span class="clock" id="clock"></span>
   <a class="icon-btn" href="/settings" aria-label="Settings">${GEAR}</a>
@@ -132,6 +132,7 @@ function tick() {                                       // the clock and the cou
 function render() {
   const a = st.awake, b = st.battery, n = st.network, h = st.hotspot;
   $('pupil').classList.toggle('spin', !!st.agentsBusy);           // the logo's pupil turns while an agent works
+  $('eye').classList.toggle('asleep', a.label === 'Sleeping');    // and shuts while the Mac sleeps
   $('state').textContent = a.label || (a.awake ? 'Awake' : 'Idle');
   $('state').className = 'state' + (a.awake ? ' live' : a.inUse ? ' use' : '');
   $('why').textContent = a.why; $('why').hidden = !a.why;
@@ -218,7 +219,7 @@ $('sleep-b').onclick = async () => {
   try {
     const r = await fetch('/sleep', { method: 'POST' });
     if (!r.ok) throw new Error();
-    $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'since ' + clockOf(Date.now()); $('why').hidden = false; $('count').hidden = true;
+    $('eye').classList.add('asleep'); $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'since ' + clockOf(Date.now()); $('why').hidden = false; $('count').hidden = true;
   } catch { b.disabled = false; b.textContent = 'Sleep now'; }
 };
 

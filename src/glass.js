@@ -72,6 +72,11 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
 /* the eye; its spinner pupil turns while an agent works */
 #pupil{transform-box:view-box;transform-origin:512px 512px}
 #pupil.spin{animation:spin 1s steps(8) infinite}
+/* asleep: the eye closes (squeezes shut, the lid line fades in) */
+.eye .open{transform-box:view-box;transform-origin:512px 512px;transition:transform .35s cubic-bezier(.5,0,.3,1),opacity .2s .15s}
+.eye .shut{opacity:0;transition:opacity .2s}
+.eye.asleep .open{transform:scaleY(.08);opacity:0;transition:transform .35s cubic-bezier(.5,0,.3,1),opacity .15s .2s}
+.eye.asleep .shut{opacity:1;transition:opacity .2s .25s}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* backdrop: the tunnel, and slow glows for the glass to pick up */
@@ -91,7 +96,7 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
 @keyframes path-b{0%,100%{transform:translate(0,0) scale(1)}20%{transform:translate(-14vw,-10vh) scale(.92)}45%{transform:translate(-30vw,4vh) scale(1.1)}70%{transform:translate(-12vw,14vh) scale(.96)}}
 @keyframes path-c{0%,100%{transform:translate(0,0) scale(1)}30%{transform:translate(-20vw,-14vh) scale(1.15)}55%{transform:translate(8vw,-24vh) scale(.9)}80%{transform:translate(16vw,-6vh) scale(1.05)}}
 .backdrop:after{content:'';position:absolute;inset:0;background:radial-gradient(130% 90% at 50% 46%,transparent 40%,rgba(0,0,0,.6) 100%)}
-@media (prefers-reduced-motion: reduce){.backdrop .fly,.orb,#pupil.spin{animation:none}}
+@media (prefers-reduced-motion: reduce){.backdrop .fly,.orb,#pupil.spin{animation:none}.eye *{transition:none!important}}
 `;
 
 // The eye with a spinner for a pupil (eight spokes, fading behind the lead one).
@@ -102,7 +107,8 @@ export const MARK = (() => {
     const [x1, y1] = p(49), [x2, y2] = p(120);
     return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-opacity="${op.toFixed(2)}"/>`;
   }).join('');
-  return `<svg width="30" height="22" viewBox="96 208 832 608" aria-hidden="true"><path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z" fill="none" stroke="#fff" stroke-width="86" stroke-linejoin="round"/><g id="pupil" stroke="var(--live)" stroke-width="48" stroke-linecap="round">${spokes}</g></svg>`;
+  return `<svg class="eye" width="30" height="22" viewBox="96 208 832 608" aria-hidden="true"><g class="open"><path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z" fill="none" stroke="#fff" stroke-width="86" stroke-linejoin="round"/><g id="pupil" stroke="var(--live)" stroke-width="48" stroke-linecap="round">${spokes}</g></g>`
+    + `<path class="shut" d="M150 512C300 660 724 660 874 512M512 623v77M305 595l-37 70M719 595l37 70" fill="none" stroke="#fff" stroke-width="72" stroke-linecap="round"/></svg>`;
 })();
 
 // The tunnel (frames shrinking to a vanishing point, drifting forward one ring per loop) and three glows.
