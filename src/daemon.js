@@ -11,9 +11,10 @@ import { cleanName, loadConfig, saveConfig } from './store.js';
 import { HOME_PORT } from './services.js';
 import { reconcile, release, failover, battery, ruleInstalled, savePassword, hasPassword, journal, claimJournal, sleepDisabled } from './awake.js';
 import { awakeReason, seen } from './activity.js';
-import { macStatus, clamshell, idleSeconds, sampleBattery, darkWake } from './macstatus.js';
+import { macStatus, clamshell, idleSeconds, sampleBattery, darkWake, device } from './macstatus.js';
 import { decide, sleptBetween, onWake, HOLD_OFF_MS } from './power.js';
 import { homePage } from './home.js';
+import { asleepPage, serviceWorker } from './asleep.js';
 import { settingsPage } from './settingspage.js';
 import { settings, applySettings, FREEZABLE } from './settings.js';
 import { hooksInstalled, installHooks } from './hooks.js';
@@ -68,6 +69,9 @@ const EYE = `<svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true">
 export const APP_HEAD = `${ICON_HEAD}
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Seer"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`;
 
+let ASLEEP = asleepPage(APP_HEAD), SW = serviceWorker(ASLEEP);
+device().then(d => { ASLEEP = asleepPage(APP_HEAD, d.model || 'Mac'); SW = serviceWorker(ASLEEP); });   // "Your MacBook Pro is asleep"
+
 function page(title, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>${esc(title)}</title>
@@ -94,7 +98,7 @@ export async function statusJson() {
   };
   if (await darkWake()) Object.assign(awake, { awake: false, label: 'Sleeping', why: '', countdown: null, inUse: false });
   const st = await macStatus({ awake, agentsBusy: why.agentsBusy || 0, lid: lidState, notes: d.notes });
-  return { ...st, agents: runningAgents(), projects: await projects(), desktop: !!loadConfig().desktop };
+  return { ...st, device: await device(), agents: runningAgents(), projects: await projects(), desktop: !!loadConfig().desktop };
 }
 
 async function home() {
@@ -144,6 +148,8 @@ const server = http.createServer(async (req, res) => {
       log('stream check from a browser:\n' + body.slice(0, 4000));
       res.writeHead(204); return res.end();
     }
+    if (url.pathname === '/sw.js') { res.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-cache' }); return res.end(SW); }
+    if (url.pathname === '/asleep') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(ASLEEP); }
     if (url.pathname === '/manifest.webmanifest') {
       res.writeHead(200, { 'content-type': 'application/manifest+json', 'cache-control': 'no-cache' });
       return res.end(MANIFEST);
@@ -184,7 +190,7 @@ const server = http.createServer(async (req, res) => {
         return json(200, { crop: { x: bounds.left / screen.width, y: bounds.top / screen.height, w: bounds.width / screen.width, h: bounds.height / screen.height } });
       } catch (e) { return json(500, { error: `Mac view: ${e.message}` }); }
     }
-    if (url.pathname === '/desktop' && loadConfig().desktop) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
+    if (url.pathname === '/desktop' && loadConfig().desktop) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage({ title: (await device()).name })); }
     // Settings: the page, what it shows, and saving. A save from the phone needs the sign-in and Seer's own
     // origin, like stay awake; /local/settings is Seer.app's menu on this Mac (no tunnel header, no origin).
     if (url.pathname === '/settings' && req.method === 'GET') {

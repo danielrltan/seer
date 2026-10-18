@@ -108,7 +108,6 @@ small{font-size:.5em;font-weight:600;color:var(--ink3);letter-spacing:0}
 const ic = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 export const BTN = {
   sleep: ic('<path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.8 7.8 0 1 0 10.1 10.1Z"/>'),
-  wake: ic('<circle cx="12" cy="12" r="3.8"/><path d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M5.5 18.5l1.4-1.4M17.1 6.9l1.4-1.4"/>'),
   cup: ic('<path d="M4.5 9.5h11v4.5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5Z"/><path d="M15.5 11h1.3a2.6 2.6 0 0 1 0 5.2h-1.6M8.5 3.8v2.4M11.5 3.8v2.4"/>'),
   cancel: ic('<path d="M7 7l10 10M17 7 7 17"/>'),
   open: ic('<path d="M8 16 16.5 7.5M9.5 7.5h7v7"/>'),

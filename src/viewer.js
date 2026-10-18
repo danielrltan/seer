@@ -6,7 +6,7 @@
 // Upright, the screen sits at the top and the space under it is a trackpad (trackpad.js); on its side the
 // screen fills the height and the controls are a glass rail on the left. Dark Liquid Glass (glass.js).
 import { ICON_HEAD } from './icons.js';
-import { GLASS_CSS, BACK, BTN } from './glass.js';
+import { GLASS_CSS, BACK } from './glass.js';
 import { TRACKPAD_JS } from './trackpad.js';
 
 // One icon style for every control: 24-unit grid, 1.7 stroke, round caps and joins (as glass.js's gear and back).
@@ -75,8 +75,6 @@ canvas{display:block}
 #keys.open{display:flex}
 .key{flex:1;min-width:0;height:40px;border-radius:15px;display:grid;place-items:center;color:var(--ink2);font:600 14px var(--round);
   background:rgba(255,255,255,.07);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
-#wake{position:absolute;z-index:3;left:50%;top:50%;transform:translate(-50%,-50%);height:44px;padding:0 26px;font-size:16px}
-#wake:active{transform:translate(-50%,-50%) scale(.97)}
 /* status, on the screen while it is not live (connecting, reconnecting, copied, errors) */
 #msg{position:absolute;z-index:2;top:12px;left:50%;transform:translateX(-50%);max-width:calc(100% - 24px);height:30px;padding:0 14px;border-radius:15px;
   font:600 13px/30px var(--sans);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
@@ -120,7 +118,7 @@ canvas{display:block}
 }
 </style></head><body>
 <div id="app">
-<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="msg" class="glass">Connecting</div><button class="btn tint" id="wake" hidden>${BTN.wake}<span>Wake</span></button></div>
+<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="msg" class="glass">Connecting</div></div>
 <div id="pad" class="glass"><i class="groove l" id="groove-l"></i><i class="groove r" id="groove-r"></i></div>
 <div id="foot">
 <div id="keys" class="glass">${KEYS.map(([k, l]) => `<button class="key" data-key="${k}" aria-label="${k}">${l}</button>`).join('')}</div>
@@ -142,7 +140,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('screen'), ctx = canvas.getContext('2d'), wrap = $('wrap'), stage = $('stage'), app = $('app'), pad = $('pad');
 // The dot always shows the state; the words show only while it is not simply live.
 const status = (text, cls) => { $('msg').textContent = text; $('msg').hidden = !text || text === 'Live'; $('dot').className = cls || ''; $('dot').setAttribute('aria-label', text); };
-let ws, decoder, configured = false, asleep = false, waitingKey = true, mods = new Set();
+let ws, decoder, configured = false, waitingKey = true, mods = new Set();
 let crop = null;   // { x, y, w, h } as fractions of the Mac's screen, or the whole screen
 let cursor = null; // where the Mac's pointer was last sent (fractions of its screen), for zooming around it
 let drawing = false, pendingJpeg = null;
@@ -164,7 +162,9 @@ function makeDecoder(cfg) {
   if (decoder && decoder.state !== 'closed') decoder.close();
   decoder = new VideoDecoder({
     output: frame => {
-      const fw = frame.displayWidth, fh = frame.displayHeight;
+      // The Mac's real size, not the frame's: H.264 codes whole 16-pixel blocks, so a 982-pixel-tall screen is
+      // coded 992 tall, and a decoder that reports that would draw a band of padding along the bottom.
+      const fw = Math.min(frame.displayWidth, cfg.width || frame.displayWidth), fh = Math.min(frame.displayHeight, cfg.height || frame.displayHeight);
       const sx = crop ? Math.round(crop.x * fw) : 0, sy = crop ? Math.round(crop.y * fh) : 0;
       const sw = crop ? Math.round(crop.w * fw) : fw, sh = crop ? Math.round(crop.h * fh) : fh;
       if (canvas.width !== sw || canvas.height !== sh) { canvas.width = sw; canvas.height = sh; fit(); }
@@ -188,21 +188,16 @@ document.addEventListener('touchend', () => {
   }).catch(() => { pendingClip = text; });
 }, true);
 
-// Asleep: the Mac answered from a dark wake (asleep, screen off). It is not woken unless asked: Wake does it.
-let wakeAsked = false, retry = 0;
+let retry = 0, misses = 0;
 function connect() {
   clearTimeout(retry);
-  if (!asleep) status('Connecting', '');
-  const q = new URLSearchParams(location.search);
-  if (wakeAsked) q.set('wake', '1');
-  wakeAsked = false;
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ${JSON.stringify(wsPath)} + (String(q) ? '?' + q : ''));
+  status('Connecting', '');
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ${JSON.stringify(wsPath)} + location.search);
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { if (!asleep) status('Connecting', ''); };
+  ws.onopen = () => { misses = 0; status('Connecting', ''); };
   ws.onmessage = ev => {
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
-      if (m.asleep) { asleep = true; status('Asleep', 'fail'); $('wake').hidden = false; return; }
       if (m.error) status(m.error, 'fail');
       if ('dock' in m && $('dock')) $('dock').classList.toggle('on', m.dock);
       if ('textFocus' in m) textFocus(m.textFocus);
@@ -210,7 +205,6 @@ function connect() {
       if (m.cursor && typeof m.cursor.x === 'number' && typeof m.cursor.y === 'number') { cursor = m.cursor; followPointer(); }   // the Mac's pointer, as fractions of its screen
       return;
     }
-    if (asleep) { asleep = false; $('wake').hidden = true; }
     const buf = new Uint8Array(ev.data), type = buf[0];
     if (type === 5) {                        // a whole JPEG frame (the Mac view): draw the newest, skip any that queue behind
       if (drawing) { pendingJpeg = buf; return; }
@@ -231,14 +225,19 @@ function connect() {
     decoder.decode(new EncodedVideoChunk({ type: type === 2 ? 'key' : 'delta', timestamp: ts, data: buf.subarray(9) }));
     if ($('dot').className !== 'live') status('Live', 'live');
   };
-  // Asleep: keep saying so (and offer Wake again if waking it failed), and look again now and then.
-  ws.onclose = () => {
+  // Lost: try again. A Mac that no longer answers at all (asleep, or off the network) gets the asleep page, which
+  // the service worker shows when a page load cannot reach it (src/asleep.js).
+  ws.onclose = async () => {
     configured = false;
-    if (asleep) { status('Asleep', 'fail'); $('wake').hidden = false; } else status('Reconnecting', 'fail');
-    retry = setTimeout(connect, asleep ? 20000 : 1500);
+    status('Reconnecting', 'fail');
+    if (++misses >= 3 && navigator.onLine !== false && navigator.serviceWorker && navigator.serviceWorker.controller) {
+      let up = false;
+      try { up = (await fetch('/ping', { cache: 'no-store' })).status === 204; } catch {}
+      if (!up) { location.reload(); return; }
+    }
+    retry = setTimeout(connect, 1500);
   };
 }
-$('wake').onclick = () => { wakeAsked = true; $('wake').hidden = true; status('Waking', ''); if (ws) { ws.onclose = null; try { ws.close(); } catch {} } connect(); };
 
 // ---------- view: fit, zoom and pan (local only) ----------
 let zoom = 1, panX = 0, panY = 0;

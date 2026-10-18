@@ -19,6 +19,18 @@ async function batteryDetail() {
 }
 
 // Seconds since the last keyboard, mouse or trackpad input (the system's own HID idle clock); null if unknown.
+// This Mac: its name (as set in Sharing), its model, and whether it is a laptop. Read once; a rename shows after
+// Seer restarts.
+let me = null;
+export async function device() {
+  if (me) return me;
+  const [hw, name] = await Promise.all([run('/usr/sbin/system_profiler', ['SPHardwareDataType', '-json']), run('/usr/sbin/scutil', ['--get', 'ComputerName'])]);
+  let model = '';
+  try { model = JSON.parse(hw).SPHardwareDataType[0].machine_name || ''; } catch {}
+  me = { name: name.trim() || model || 'Mac', model, kind: /MacBook/i.test(model) ? 'laptop' : model ? 'desktop' : 'unknown' };
+  return me;
+}
+
 // Is the Mac asleep and only half up (a dark wake: the network, no screen)? A sleeping Mac wakes like this every few
 // minutes, for maintenance or a packet, and answers the phone while it lasts. Seer must not take that for the
 // owner being back, nor turn it into a full wake. A full wake has graphics even with the display off or the lid

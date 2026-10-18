@@ -136,7 +136,7 @@ ${BACKDROP}
 
 <div class="pane on" id="p-home">
 <section class="glass hero">
-  <div class="top"><span class="k">mac</span><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span></div>
+  <div class="top"><span class="k" id="dev">mac</span><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span></div>
   <div class="foot"><div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div><button class="btn" id="sleep-b">${BTN.sleep}<span>Sleep now</span></button></div>
   <div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div>
 </section>
@@ -201,7 +201,7 @@ const AGENT = {
   other: '<svg viewBox="0 0 24 24"><path d="M12 4.5c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7Z"/></svg>',
 };
 
-// What each monitor is: the Mac (a laptop has a lid; a desktop Mac reports none), a web project on it, a cloud copy.
+// What each monitor is: this Mac (a laptop or a desktop, from its model), a web project on it, a cloud copy.
 const ICON = {
   laptop: '<svg viewBox="0 0 24 24"><rect x="4.5" y="5" width="15" height="10.5" rx="1.8"/><path d="M2.5 18.5h19"/></svg>',
   desktop: '<svg viewBox="0 0 24 24"><rect x="3" y="3.8" width="18" height="12.6" rx="2.2"/><path d="M12 16.4v3.6M8.2 20h7.6"/></svg>',
@@ -250,11 +250,13 @@ function render() {
     + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View${BTN.open}</a>'
       : '<button class="btn view off" data-tip="Turn on Remote Control in this session to view it" aria-label="View: Remote Control is off">View${BTN.info}</button>') + '</div>').join('') : '<p class="empty">no agents</p>';
   // projects
-  const rows = (st.desktop ? [{ name: 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
+  const dev = st.device || {};
+  $('dev').textContent = dev.name || 'mac';
+  const rows = (st.desktop ? [{ name: dev.name || 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
     const live = p.state === 'running' || p.state === 'on demand' || p.state === 'streamed';
-    const icon = p.where === 'screen' ? (st.lid === 'unknown' ? ICON.desktop : ICON.laptop) : p.where === 'cloud' ? ICON.window : ICON.web;
-    const meta = p.where === 'screen' ? 'screen' : [p.where === 'cloud' ? 'cloud' : 'mac', p.state === 'running' ? '' : p.state].filter(Boolean).join(' · ');
+    const icon = p.where === 'screen' ? (dev.kind === 'desktop' || (!dev.kind && st.lid === 'unknown') ? ICON.desktop : ICON.laptop) : p.where === 'cloud' ? ICON.window : ICON.web;
+    const meta = p.where === 'screen' ? [dev.model, 'screen'].filter(Boolean).join(' · ') : [p.where === 'cloud' ? 'cloud' : 'mac', p.state === 'running' ? '' : p.state].filter(Boolean).join(' · ');
     return '<a class="proj mon' + (live ? ' live' : '') + '" href="' + esc(p.href) + '"><span class="ic">' + icon + '<i class="pip ' + (live ? 'on' : p.state === 'failed' ? 'red' : '') + '"></i></span>'
       + '<div class="main"><div class="nm">' + esc(p.name) + '</div><div class="meta">' + esc(meta) + '</div></div>'
       + '<span class="go"></span></a>';

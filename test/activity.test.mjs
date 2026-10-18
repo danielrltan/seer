@@ -270,7 +270,7 @@ test('several sessions mixed: two working, one waiting, one idle, one dead', asy
   const list = runningAgents();
   assert.equal(list.length, 4);
   assert.deepEqual(list.map(x => [x.busy, x.waiting]), [[true, false], [true, false], [false, true], [false, false]]);
-  for (const x of list) assert.deepEqual(Object.keys(x).sort(), ['busy', 'dir', 'name', 'since', 'url', 'waiting']);
+  for (const x of list) assert.deepEqual(Object.keys(x).sort(), ['busy', 'dir', 'kind', 'name', 'since', 'url', 'waiting']);
 });
 
 test('lid open: the window does not apply; working still holds; inUse passes through', async () => {
