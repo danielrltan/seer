@@ -174,10 +174,11 @@ function clearMods() { if (!mods.size) return; mods.clear(); document.querySelec
 
 // ---------- touch ----------
 // One finger, like any phone page: swipe = scroll (the page under the finger, with momentum), tap = click,
-// hold and then drag = mouse drag (select, move things), hold still = right click.
+// double tap = double click, tap then touch again and drag = mouse drag (select, move things, as a laptop
+// trackpad's tap-and-drag), hold still = right click.
 // Two fingers: pinch = zoom the view, move while zoomed = pan it, move unzoomed = scroll. The kind of gesture
 // is decided once, from its first clear movement, and kept until the fingers lift.
-let one = null, two = null, holdTimer = null, armTimer = null, glide = null;
+let one = null, two = null, holdTimer = null, glide = null, lastTap = { t: 0, x: 0, y: 0 };
 const scale = () => { const r = canvas.getBoundingClientRect(); return r.width ? canvas.width / r.width : 1; };   // screen px -> remote px
 const scrollBy = (dx, dy) => { const k = scale(); send({ t: 'scroll', dx: Math.round(dx * k), dy: Math.round(dy * k) }); };
 function stopGlide() { if (glide) { cancelAnimationFrame(glide); glide = null; } }
@@ -198,8 +199,9 @@ stage.addEventListener('touchstart', e => {
   stopGlide();
   if (e.touches.length === 1) {
     const t = e.touches[0];
-    one = { x0: t.clientX, y0: t.clientY, t0: Date.now(), mode: null, armed: false, x: t.clientX, y: t.clientY, tm: performance.now(), vx: 0, vy: 0 };
-    armTimer = setTimeout(() => { if (one && !one.mode) one.armed = true; }, 300);
+    // A touch that follows a tap closely, near it, is the second half of a double tap: dragging it drags.
+    const afterTap = Date.now() - lastTap.t < 350 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 40;
+    one = { x0: t.clientX, y0: t.clientY, t0: Date.now(), mode: null, afterTap, x: t.clientX, y: t.clientY, tm: performance.now(), vx: 0, vy: 0 };
     holdTimer = setTimeout(() => {
       if (!one || one.mode) return;
       one.mode = 'held';
@@ -208,7 +210,7 @@ stage.addEventListener('touchstart', e => {
       navigator.vibrate && navigator.vibrate(10);
     }, 650);
   } else if (e.touches.length === 2) {
-    clearTimeout(holdTimer); clearTimeout(armTimer);
+    clearTimeout(holdTimer);
     if (one && one.mode === 'drag') send({ t: 'up', ...toRemote(one.x, one.y) });
     one = null;
     const [a, b] = e.touches;
@@ -223,10 +225,10 @@ stage.addEventListener('touchmove', e => {
   if (one && e.touches.length === 1) {
     const t = e.touches[0], now = performance.now();
     if (!one.mode && Math.hypot(t.clientX - one.x0, t.clientY - one.y0) > 10) {
-      clearTimeout(holdTimer); clearTimeout(armTimer);
+      clearTimeout(holdTimer);
       const p = toRemote(one.x0, one.y0);
       send({ t: 'move', ...p });                     // the pointer goes under the finger: scroll and drag act there
-      if (one.armed) { one.mode = 'drag'; send(withMods({ t: 'down', ...p })); } else one.mode = 'scroll';
+      if (one.afterTap) { one.mode = 'drag'; send(withMods({ t: 'down', ...p })); } else one.mode = 'scroll';
     }
     if (one.mode === 'scroll') {
       const dx = t.clientX - one.x, dy = t.clientY - one.y, dt = Math.max(1, now - one.tm);
@@ -255,13 +257,14 @@ stage.addEventListener('touchmove', e => {
 
 stage.addEventListener('touchend', e => {
   e.preventDefault();
-  clearTimeout(holdTimer); clearTimeout(armTimer);
+  clearTimeout(holdTimer);
   if (one && !e.touches.length) {
     if (one.mode === 'drag') send({ t: 'up', ...toRemote(one.x, one.y) });
     else if (one.mode === 'scroll') { if (performance.now() - one.tm < 80) startGlide(one.vx, one.vy); }
     else if (!one.mode && Date.now() - one.t0 < 650) {
       const p = toRemote(one.x0, one.y0);
-      send({ t: 'move', ...p }); send(withMods({ t: 'down', ...p })); send({ t: 'up', ...p });
+      send({ t: 'move', ...p }); send(withMods({ t: 'down', ...p })); send({ t: 'up', ...p });   // two in a row: the Mac counts a double click
+      lastTap = one.afterTap ? { t: 0, x: 0, y: 0 } : { t: Date.now(), x: one.x0, y: one.y0 };
       primeKeyboard();
     }
     clearMods(); one = null;
