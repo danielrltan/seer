@@ -61,11 +61,10 @@ export function awakeReason({ watching, lidClosed, inUse }) {
   const until = last + reachableMs;
   const stayUntil = cfg.stayAwakeUntil > now ? cfg.stayAwakeUntil : 0;
   const clock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const why = stayUntil ? `staying awake until ${clock(stayUntil)}`
-    : watching ? 'you are watching'
+  const why = stayUntil ? `until ${clock(stayUntil)}`
+    : watching ? 'streaming'
     : a.busy ? `${a.busy} agent${a.busy > 1 ? 's' : ''} working`
-    : lidClosed && now < until ? `${a.waiting ? 'an agent is waiting for you; ' : ''}kept awake ${Math.ceil((until - now) / 60_000)} more min after ${a.lastAt >= lastSeen ? 'the last agent' : 'you last checked'}`
+    : lidClosed && now < until ? (a.waiting ? 'an agent needs you' : a.lastAt >= lastSeen ? 'agent finished' : 'you checked in')
     : null;
-  const idle = inUse ? 'you are using it' : lidClosed ? 'nothing needs it: sleeping to save battery' : 'nothing needs it: normal sleep';
-  return { awake: !!why, why: why || idle, inUse: !!inUse, agentsBusy: a.busy, agentsWaiting: a.waiting, reachableUntil: lidClosed && last ? until : 0, stayUntil };
+  return { awake: !!why, why: why || '', inUse: !!inUse, agentsBusy: a.busy, agentsWaiting: a.waiting, reachableUntil: lidClosed && last ? until : 0, stayUntil };
 }

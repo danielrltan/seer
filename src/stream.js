@@ -63,7 +63,9 @@ function connectHelper(log) {
       const msg = Buffer.concat([frame.subarray(0, 1), frame.subarray(5)]);   // [type][payload] to the browser
       if (type === 1) lastConfig = msg;
       if (type === 4) {                         // status; the same error again within 30 s is not news (one per tap otherwise)
-        const text = frame.subarray(5).toString();
+        let text = frame.subarray(5).toString();
+        if (/Screen Recording|declined TCC|screen-recording/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Screen Recording settings on the Mac' });
+        else if (/"error":"accessibility"|Accessibility not allowed|needs Accessibility/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Accessibility settings on the Mac' });
         if (text === lastStatus.text && Date.now() - lastStatus.at < 30_000) continue;
         lastStatus = { text, at: Date.now() };
         log(`stream: ${text}`); for (const v of viewers) v.send(text); continue;

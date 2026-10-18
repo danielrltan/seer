@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { battery, netState, WIFI_HELPER, wifiArgs, ruleInstalled } from './awake.js';
 import path from 'node:path';
 import { HOME, loadConfig } from './store.js';
+import { settings } from './settings.js';
 
 const run = (file, args) => new Promise(resolve => execFile(file, args, { timeout: 5000 }, (err, out) => resolve(err ? '' : String(out))));
 
@@ -88,9 +89,9 @@ export async function macStatus({ awake, agentsBusy }) {
   const hotspot = { name: cfg.hotspotSsid || null, offlineFor: netState.downSince ? Math.round((Date.now() - netState.downSince) / 1000) : 0, joining: netState.joining, lastJoin: netState.lastJoin };
   // What needs the owner's attention, most urgent first; empty when all is well.
   const help = [];
-  if (netw.kind === 'offline' && hotspot.lastJoin?.result === 'not-found') help.push('Turn on Personal Hotspot on your phone, and keep its screen open until the Mac joins.');
-  else if (netw.kind === 'offline' && !hotspot.name) help.push('The Mac is offline and has no hotspot to fall back on: seer away hotspot "<name>".');
-  if (!batt.pluggedIn && batt.pct <= 15) help.push(`Battery at ${batt.pct}%: the Mac sleeps below 15% to keep some charge. Plug it in to keep it reachable.`);
-  if (lidState === 'closed' && !(cfg.away && awayAllowed)) help.push('The lid is closed and away mode is off, so the Mac will sleep: seer away on.');
+  const floor = settings(cfg).sleepBelow;
+  if (!batt.pluggedIn && batt.pct <= floor + 5) help.push(`Battery ${batt.pct}%. It sleeps at ${floor}% unless plugged in.`);
+  if (agentsBusy && !awayAllowed) help.push('Closing the lid will sleep it. Run seer away install on the Mac.');
+  else if (agentsBusy && !cfg.away) help.push('Closing the lid will sleep it. Turn on Stay awake with the lid closed in Settings.');
   return { at: Date.now(), battery: { ...batt, drainPerHour: batt.pluggedIn ? null : drainRate(awake.mode) }, lid: lidState, network: netw, awake, agentsBusy, hotspot, help };
 }

@@ -55,14 +55,14 @@ export function applySettings(patch) {
   for (const [k, v] of Object.entries(patch)) {
     const s = SPEC[k];
     if (!s) throw new Error(`unknown setting: ${k}`);
-    if (s.type === 'bool') { if (typeof v !== 'boolean') throw new Error(`${k}: true or false`); clean[k] = v; }
-    else if (s.type === 'int') { const n = Math.round(Number(v)); if (!Number.isFinite(n) || n < s.min || n > s.max) throw new Error(`${k}: ${s.min} to ${s.max}`); clean[k] = n; }
-    else if (s.type === 'text') { if (typeof v !== 'string' || v.length > s.max || /[\u0000-\u001f]/.test(v)) throw new Error(`${k}: up to ${s.max} characters`); clean[k] = v.trim(); }
-    else if (s.type === 'apps') { if (!Array.isArray(v) || !v.every(b => b in FREEZABLE)) throw new Error(`${k}: apps from the list`); clean[k] = [...new Set(v)]; }
+    if (s.type === 'bool') { if (typeof v !== 'boolean') throw new Error('not saved'); clean[k] = v; }
+    else if (s.type === 'int') { const n = Math.round(Number(v)); if (!Number.isFinite(n) || n < s.min || n > s.max) throw new Error(`${s.min} to ${s.max}`); clean[k] = n; }
+    else if (s.type === 'text') { if (typeof v !== 'string' || v.length > s.max || /[\u0000-\u001f]/.test(v)) throw new Error(`up to ${s.max} characters`); clean[k] = v.trim(); }
+    else if (s.type === 'apps') { if (!Array.isArray(v) || !v.every(b => b in FREEZABLE)) throw new Error('not saved'); clean[k] = [...new Set(v)]; }
   }
   const next = settings({ ...loadConfig(), ...clean });
   if ('lowPowerBelow' in clean && next.sleepBelow >= next.lowPowerBelow) clean.sleepBelow = next.sleepBelow;
-  if ('sleepBelow' in clean && clean.sleepBelow >= next.lowPowerBelow) throw new Error('sleep below must be under Low Power Mode below');
+  if ('sleepBelow' in clean && clean.sleepBelow >= next.lowPowerBelow) throw new Error('must be under the Low Power Mode level');
   saveConfig(clean);
   return settings();
 }

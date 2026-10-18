@@ -66,7 +66,7 @@ ${BACKDROP}
 
 <div class="grid">
   <div class="glass tile"><span class="k">battery</span><div class="v" id="batt">—</div><div class="track" style="flex:none;margin-top:12px"><i id="batt-i"></i></div><div class="s" id="batt-s"></div></div>
-  <div class="glass tile"><span class="k">ping</span><div class="v" id="ping">—</div><svg class="scope" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline id="scope" points=""/></svg><div class="s">phone to mac</div></div>
+  <div class="glass tile"><span class="k">ping</span><div class="v" id="ping">—</div><svg class="scope" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline id="scope" points=""/></svg></div>
   <div class="glass tile"><span class="k">network</span><div class="icon"><svg class="wifi" width="26" height="21" viewBox="0 0 30 24" aria-hidden="true"><path id="r3" d="M3 11a17 17 0 0 1 24 0"/><path id="r2" d="M7.5 15.5a10.6 10.6 0 0 1 15 0"/><path id="r1" d="M11.5 19.5a5 5 0 0 1 7 0"/><circle cx="15" cy="22" r="1.7"/></svg><div class="v" id="net">—</div></div><div class="s" id="net-s"></div></div>
   <div class="glass tile"><span class="k">lid</span><div class="icon"><svg class="lap" width="32" height="22" viewBox="0 0 36 24" aria-hidden="true"><path id="lap-screen" d="M7 3h22v14H7z"/><path d="M2 20h32l-2 2H4z"/></svg><div class="v" id="lid">—</div></div><div class="s" id="lid-s"></div></div>
 </div>
@@ -74,7 +74,7 @@ ${BACKDROP}
 <section class="glass stay">
   <div class="row"><span class="k">stay awake</span><span class="amt" id="stay-amt">1 h</span></div>
   <input class="slider" type="range" id="stay-r" min="0" max="11" value="4" aria-label="How long to stay awake">
-  <div class="row"><span class="k" id="stay-now"></span><span class="btns"><button class="btn" id="stay-x" hidden>Cancel</button><button class="btn tint" id="stay-b">Stay awake</button></span></div>
+  <div class="row"><span class="k" id="stay-now"></span><span class="btns"><button class="btn" id="stay-x" hidden>Cancel</button><button class="btn tint" id="stay-b">Start</button></span></div>
 </section>
 
 <div class="sect">projects</div>
@@ -94,7 +94,7 @@ function tick() {                                       // the clock and the cou
   const until = a.stayUntil || (a.awake && !st.agentsBusy && a.reachableUntil > now ? a.reachableUntil : 0);
   $('count').hidden = !until;
   if (until) {
-    $('count-k').textContent = a.stayUntil ? 'awake' : 'then sleeps';
+    $('count-k').textContent = a.stayUntil ? 'left' : 'to sleep';
     $('count-t').textContent = mmss(until - now);
     const span = a.stayUntil ? Math.max(a.stayUntil - (st.stayFrom || now), until - now) : 15 * 60_000;
     $('count-i').style.width = Math.max(2, Math.min(100, (until - now) / span * 100)) + '%';
@@ -104,27 +104,26 @@ function tick() {                                       // the clock and the cou
 function render() {
   const a = st.awake, b = st.battery, n = st.network, h = st.hotspot;
   $('pupil').classList.toggle('spin', !!st.agentsBusy);           // the logo's pupil turns while an agent works
-  $('state').textContent = a.awake ? (a.headless ? 'Headless' : 'Awake') : a.inUse ? 'In use' : st.lid === 'closed' ? 'Will sleep' : 'Normal sleep';
+  $('state').textContent = a.label || (a.awake ? 'Awake' : 'Idle');
   $('state').className = 'state' + (a.awake ? ' live' : a.inUse ? ' use' : '');
-  $('why').textContent = a.why + (st.agentsBusy && !/agent/.test(a.why) ? ', ' + st.agentsBusy + ' agent' + (st.agentsBusy > 1 ? 's' : '') + ' working' : '') + (a.headless ? ', saving power' : '');
+  $('why').textContent = a.why; $('why').hidden = !a.why;
   // battery
   const low = !b.pluggedIn && b.pct <= 20;
   $('batt').textContent = b.pct + '%'; $('batt').className = 'v ' + (low ? 'red' : b.pluggedIn ? 'green' : '');
   $('batt-i').style.width = b.pct + '%'; $('batt-i').className = low ? 'red' : '';
-  $('batt-s').textContent = b.pluggedIn ? (b.state === 'charging' ? 'charging' : 'plugged in') : (b.remaining ? b.remaining + ' left' : 'on battery') + (b.drainPerHour != null ? ', ' + b.drainPerHour + '%/h' : '');
+  $('batt-s').textContent = b.pluggedIn ? (b.state === 'charging' ? 'charging' : 'plugged in') : (b.remaining ? b.remaining + ' left' : 'on battery') + (b.drainPerHour != null ? ' · ' + b.drainPerHour + '%/h' : '');
   // network
   const lit = { strong: 3, good: 2, weak: 1, poor: 0 }[n.signal] ?? (n.kind === 'hotspot' || n.kind === 'wired' ? 3 : 0);
   ['r1', 'r2', 'r3'].forEach((r, i) => $(r).classList.toggle('on', n.kind !== 'offline' && i < lit));
   $('net').textContent = { wifi: 'Wi-Fi', hotspot: 'Hotspot', wired: 'Wired', offline: 'Offline' }[n.kind] || n.kind;
   $('net').className = 'v ' + (n.kind === 'offline' ? 'red' : n.kind === 'hotspot' ? 'amber' : '');
   $('net-s').textContent = n.kind === 'offline'
-    ? (h.joining ? 'joining ' + (h.name || 'hotspot') : h.offlineFor ? 'offline ' + h.offlineFor + ' s' + (h.lastJoin ? ', ' + h.lastJoin.result : '') : 'no internet')
-    : n.kind === 'hotspot' ? (h.name || 'phone') + (n.internetMs != null ? ', ' + n.internetMs + ' ms' : '')
-    : [n.ssid, n.txRate ? n.txRate + ' Mbps' : '', n.internetMs != null ? n.internetMs + ' ms' : ''].filter(Boolean).join(', ');
+    ? (h.joining ? 'joining ' + (h.name || 'hotspot') : 'no internet')
+    : [n.kind === 'hotspot' ? h.name : n.ssid, n.internetMs != null ? n.internetMs + ' ms' : ''].filter(Boolean).join(' · ');
   // lid
   $('lid').textContent = st.lid === 'unknown' ? '—' : st.lid === 'closed' ? 'Closed' : 'Open';
   $('lap-screen').setAttribute('d', st.lid === 'closed' ? 'M4 18.5h28' : 'M7 3h22v14H7z');
-  $('lid-s').textContent = st.lid === 'closed' ? (a.awake ? 'awake anyway' : a.inUse ? 'external display' : 'will sleep') : a.inUse ? 'in use' : 'idle';
+  $('lid-s').textContent = st.lid === 'closed' && a.inUse ? 'external display' : '';
   // stay awake
   $('stay-x').hidden = !a.stayUntil;
   $('stay-now').textContent = a.stayUntil ? 'until ' + clockOf(a.stayUntil) : '';
@@ -135,9 +134,9 @@ function render() {
   $('projects').innerHTML = rows.length ? rows.map(p => {
     const live = p.state === 'running' || p.state === 'on demand' || p.state === 'streamed';
     return '<a class="proj" href="' + esc(p.href) + '"><span class="pip ' + (live ? 'on' : p.state === 'failed' ? 'red' : '') + '"></span>'
-      + '<div class="main"><div class="nm">' + esc(p.name) + '</div><div class="meta">' + esc(p.where === 'cloud' ? 'cloud' : p.where === 'screen' ? 'mac screen' : 'this mac') + ' · ' + esc(p.state) + '</div></div>'
+      + '<div class="main"><div class="nm">' + esc(p.name) + '</div><div class="meta">' + esc(p.where === 'cloud' ? 'cloud' : p.where === 'screen' ? 'screen' : 'mac') + (p.state === 'running' || p.state === 'streamed' ? '' : ' · ' + esc(p.state)) + '</div></div>'
       + '<span class="go"></span></a>';
-  }).join('') : '<p class="empty">no previews running</p>';
+  }).join('') : '<p class="empty">nothing running</p>';
   tick();
 }
 
@@ -176,15 +175,15 @@ let armed = 0;
 $('sleep-b').onclick = async () => {
   const b = $('sleep-b');
   if (Date.now() > armed) {
-    armed = Date.now() + 3000; b.textContent = 'Tap again to sleep'; b.classList.add('armed');
+    armed = Date.now() + 3000; b.textContent = 'Tap again'; b.classList.add('armed');
     setTimeout(() => { if (Date.now() > armed) { b.textContent = 'Sleep now'; b.classList.remove('armed'); } }, 3100);
     return;
   }
-  armed = 0; b.classList.remove('armed'); b.disabled = true; b.textContent = 'Going to sleep';
+  armed = 0; b.classList.remove('armed'); b.disabled = true; b.textContent = 'Sleeping';
   try {
     const r = await fetch('/sleep', { method: 'POST' });
     if (!r.ok) throw new Error();
-    $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'asleep since ' + clockOf(Date.now()); $('count').hidden = true;
+    $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'since ' + clockOf(Date.now()); $('why').hidden = false; $('count').hidden = true;
   } catch { b.disabled = false; b.textContent = 'Sleep now'; }
 };
 

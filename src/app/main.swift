@@ -115,13 +115,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if status.isEmpty {
             menu.addItem(info("Starting…"))
         } else {
-            let state = (awake["awake"] as? Bool ?? false) ? ((awake["headless"] as? Bool ?? false) ? "Headless" : "Awake")
-                : (awake["inUse"] as? Bool ?? false) ? "In use" : (status["lid"] as? String) == "closed" ? "Will sleep" : "Normal sleep"
-            menu.addItem(info("\(state): \(awake["why"] as? String ?? "")"))
+            // The words come from the Seer service (the label and reason the phone shows), so they change without a rebuild.
+            let label = awake["label"] as? String ?? "Seer", why = awake["why"] as? String ?? ""
+            menu.addItem(info(why.isEmpty ? label : "\(label) · \(why)"))
             let kind = ["wifi": "Wi-Fi", "hotspot": "Hotspot", "wired": "Wired", "offline": "Offline"][net["kind"] as? String ?? ""] ?? "—"
-            menu.addItem(info("Battery \(batt["pct"] as? Int ?? 0)%\((batt["pluggedIn"] as? Bool ?? false) ? ", plugged in" : "")  ·  \(kind)  ·  lid \(status["lid"] as? String ?? "?")"))
-            let busy = status["agentsBusy"] as? Int ?? 0
-            if busy > 0 { menu.addItem(info("\(busy) agent\(busy > 1 ? "s" : "") working")) }
+            menu.addItem(info("\(batt["pct"] as? Int ?? 0)%\((batt["pluggedIn"] as? Bool ?? false) ? " · plugged in" : "") · \(kind)"))
         }
         menu.addItem(.separator())
         let open = NSMenuItem(title: "Open Seer", action: #selector(openHome), keyEquivalent: "o"); open.target = self; menu.addItem(open)

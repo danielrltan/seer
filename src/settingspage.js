@@ -43,18 +43,18 @@ ${BACKDROP}
 
 <div class="sect">staying awake</div>
 <div class="glass group">
-  <label class="row"><span class="l">Stay up with the lid closed<span class="d" id="away-d"></span></span><input type="checkbox" class="switch" data-k="away"></label>
-  <label class="row"><span class="l">Working agents keep it awake<span class="d" id="agentsKeepAwake-d"></span></span><input type="checkbox" class="switch" data-k="agentsKeepAwake"></label>
-  <div class="row col"><div class="top"><span class="l">Stay awake after the last activity<span class="d" id="reachableMin-d"></span></span><span class="val" id="reachableMin-v"></span></div>
+  <label class="row"><span class="l">Stay awake with the lid closed<span class="d" id="away-d"></span></span><input type="checkbox" class="switch" data-k="away"></label>
+  <label class="row"><span class="l">Agents keep it awake<span class="d" id="agentsKeepAwake-d"></span></span><input type="checkbox" class="switch" data-k="agentsKeepAwake"></label>
+  <div class="row col"><div class="top"><span class="l">Wait before sleeping<span class="d" id="reachableMin-d"></span></span><span class="val" id="reachableMin-v"></span></div>
     <input type="range" class="slider" data-k="reachableMin" min="0" max="120" step="5" data-unit="min"></div>
 </div>
 
-<div class="sect">lid closed, nobody watching</div>
+<div class="sect">lid closed</div>
 <div class="glass group" id="headless-g">
   <label class="row"><span class="l">Screen off<span class="d" id="screenOff-d"></span></span><input type="checkbox" class="switch" data-k="screenOff"></label>
   <label class="row"><span class="l">Mute<span class="d" id="mute-d"></span></span><input type="checkbox" class="switch" data-k="mute"></label>
   <label class="row"><span class="l">Low Power Mode on battery<span class="d" id="headlessLowPower-d"></span></span><input type="checkbox" class="switch" data-k="headlessLowPower"></label>
-  <label class="row"><span class="l">Freeze apps while no agent works<span class="d" id="freeze-d"></span></span><input type="checkbox" class="switch" data-k="freeze"></label>
+  <label class="row"><span class="l">Freeze apps<span class="d" id="freeze-d"></span></span><input type="checkbox" class="switch" data-k="freeze"></label>
   <div class="apps" id="apps"></div>
 </div>
 
@@ -62,13 +62,13 @@ ${BACKDROP}
 <div class="glass group">
   <div class="row col"><div class="top"><span class="l">Low Power Mode below<span class="d" id="lowPowerBelow-d"></span></span><span class="val" id="lowPowerBelow-v"></span></div>
     <input type="range" class="slider" data-k="lowPowerBelow" min="10" max="80" step="5" data-unit="%"></div>
-  <div class="row col"><div class="top"><span class="l">Let it sleep below<span class="d" id="sleepBelow-d"></span></span><span class="val" id="sleepBelow-v"></span></div>
+  <div class="row col"><div class="top"><span class="l">Sleep below<span class="d" id="sleepBelow-d"></span></span><span class="val" id="sleepBelow-v"></span></div>
     <input type="range" class="slider" data-k="sleepBelow" min="5" max="50" step="5" data-unit="%"></div>
 </div>
 
 <div class="sect">network</div>
 <div class="glass group">
-  <label class="row"><span class="l">Join the hotspot when Wi-Fi drops<span class="d" id="hotspotFailover-d"></span></span><input type="checkbox" class="switch" data-k="hotspotFailover"></label>
+  <label class="row"><span class="l">Hotspot backup<span class="d" id="hotspotFailover-d"></span></span><input type="checkbox" class="switch" data-k="hotspotFailover"></label>
   <div class="row"><input class="text" id="ssid" placeholder="Hotspot name" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="ssid-b" hidden>Save</button></div>
   <div class="row"><input class="text" id="pw" type="password" placeholder="Password" autocomplete="new-password"><button class="btn" id="pw-b" hidden>Save</button></div>
   <div class="row" id="net-d-row" hidden><span class="l"><span class="d" id="hotspotSsid-d" style="margin:0"></span></span></div>
@@ -77,7 +77,7 @@ ${BACKDROP}
 <div class="sect">screen</div>
 <div class="glass group">
   <label class="row"><span class="l">Desktop stream<span class="d" id="desktop-d"></span></span><input type="checkbox" class="switch" data-k="desktop"></label>
-  <div class="row col"><div class="top"><span class="l">Close the Mac view after<span class="d" id="macViewCloseMin-d"></span></span><span class="val" id="macViewCloseMin-v"></span></div>
+  <div class="row col"><div class="top"><span class="l">Close Mac view after<span class="d" id="macViewCloseMin-d"></span></span><span class="val" id="macViewCloseMin-v"></span></div>
     <input type="range" class="slider" data-k="macViewCloseMin" min="1" max="30" step="1" data-unit="min"></div>
 </div>
 
@@ -88,7 +88,7 @@ ${BACKDROP}
 
 <div class="sect">app</div>
 <div class="glass group">
-  <label class="row"><span class="l">Open Seer at login<span class="d" id="launchAtLogin-d"></span></span><input type="checkbox" class="switch" data-k="launchAtLogin"></label>
+  <label class="row"><span class="l">Open at login<span class="d" id="launchAtLogin-d"></span></span><input type="checkbox" class="switch" data-k="launchAtLogin"></label>
 </div>
 </main>
 <script>
@@ -110,15 +110,15 @@ function render() {
   document.querySelectorAll('.slider').forEach(el => { el.value = s[el.dataset.k]; paintSlider(el); });
   const sw = document.querySelector('[data-k=away]');
   sw.disabled = !inst.away && !s.away;
-  note('away', inst.away ? '' : 'needs one sudo step on the Mac: seer away install');
+  note('away', inst.away ? '' : 'run seer away install on the Mac first');
   $('headless-g').classList.toggle('off', !s.freeze);
   $('apps').innerHTML = Object.entries(st.apps).map(([id, name]) =>
     '<button class="app' + (s.freezeApps.includes(id) ? ' on' : '') + '" data-id="' + esc(id) + '">' + esc(name) + '</button>').join('');
   if (document.activeElement !== $('ssid')) $('ssid').value = s.hotspotSsid;
   $('ssid-b').hidden = true;
-  $('pw').placeholder = inst.hotspotPassword ? 'Password saved' : 'Password';
+  $('pw').placeholder = inst.hotspotPassword ? 'Password saved' : 'Hotspot password';
   $('net-d-row').hidden = !(s.hotspotSsid && !inst.hotspotPassword);
-  if (s.hotspotSsid && !inst.hotspotPassword) note('hotspotSsid', 'no password saved for this hotspot', true);
+  if (s.hotspotSsid && !inst.hotspotPassword) note('hotspotSsid', 'no password saved', true);
   $('hooks-v').textContent = inst.hooks === 3 ? 'installed' : inst.hooks + ' of 3';
   $('hooks-v').className = 'val' + (inst.hooks === 3 ? ' ok' : '');
   $('hooks-b').hidden = inst.hooks === 3;

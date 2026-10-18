@@ -7,7 +7,7 @@ export function desktopPage({ wsPath = '/desktop/ws', dock = true, title = 'Seer
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>${title}</title>
-<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png?v=3"><link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Seer"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{--bg:#000;--bar:#0a0a0a;--border:#262626;--text:#ededed;--quiet:#a1a1a1;--live:#00e676;--fail:#ff4d4f;--wait:#f5a524}
@@ -101,7 +101,7 @@ function connect() {
   status('Connecting', '');
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ${JSON.stringify(wsPath)} + location.search);
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => status('Waiting for the first frame', '');
+  ws.onopen = () => status('Connecting', '');
   ws.onmessage = ev => {
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
@@ -130,7 +130,7 @@ function connect() {
     decoder.decode(new EncodedVideoChunk({ type: type === 2 ? 'key' : 'delta', timestamp: ts, data: buf.subarray(9) }));
     if ($('dot').className !== 'live') status('Live', 'live');
   };
-  ws.onclose = () => { status('Disconnected, reconnecting', 'fail'); configured = false; setTimeout(connect, 1500); };
+  ws.onclose = () => { status('Reconnecting', 'fail'); configured = false; setTimeout(connect, 1500); };
 }
 
 // ---------- view: fit, zoom and pan (local only) ----------
@@ -342,17 +342,17 @@ input.addEventListener('input', e => {
 
 async function start() {
   if (${JSON.stringify(openPath)}) {
-    status('Opening on the Mac', '');
+    status('Opening', '');
     try {
       const r = await fetch(${JSON.stringify(openPath)} + location.search, { method: 'POST' });
       const body = await r.json();
-      if (!r.ok) return status(body.error || 'Could not open it on the Mac', 'fail');
+      if (!r.ok) return status(body.error || "Couldn't open it", 'fail');
       crop = body.crop;
-    } catch { return status('Could not reach the Mac', 'fail'); }
+    } catch { return status('Mac unreachable', 'fail'); }
   }
   connect();
 }
-if (!('VideoDecoder' in window) && ${JSON.stringify(wsPath)} === '/desktop/ws') status('This browser cannot play the stream (no WebCodecs)', 'fail');
+if (!('VideoDecoder' in window) && ${JSON.stringify(wsPath)} === '/desktop/ws') status("This browser can't play the stream", 'fail');
 else start();
 </script></body></html>`;
 }
