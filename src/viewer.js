@@ -3,11 +3,13 @@
 // opts: wsPath (the socket; the page's own query string is passed on), dock (the Dock button), title.
 // openPath: POSTed first (with the page's query string); its { crop } (fractions of the screen) limits the view
 // to that part of the screen, and taps map into it (the Mac view's window).
+import { ICON_HEAD } from './icons.js';
+
 export function desktopPage({ wsPath = '/desktop/ws', dock = true, title = 'Seer', openPath = null, backHref = '/' } = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000"><title>${title}</title>
-<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png?v=3"><link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml">
+${ICON_HEAD}
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Seer"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{--bg:#000;--bar:#0a0a0a;--border:#262626;--text:#ededed;--quiet:#a1a1a1;--live:#00e676;--fail:#ff4d4f;--wait:#f5a524}

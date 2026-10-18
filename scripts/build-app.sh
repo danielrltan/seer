@@ -20,15 +20,24 @@ chmod -R u+w "$OUT/Contents/Resources/bin"                      # Homebrew insta
 rsync -a --exclude '.DS_Store' bin src assets node_modules package.json "$OUT/Contents/Resources/seer/"
 rm -rf "$OUT/Contents/Resources/seer/src/app" "$OUT/Contents/Resources/seer/src/helpers"   # compiled into the app
 
-# icon: AppIcon.icns from the 512 px master
-ICONSET="$(mktemp -d)/AppIcon.iconset"; mkdir -p "$ICONSET"
-for s in 16 32 64 128 256 512; do
-  sips -z $s $s assets/icon-512.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
-  [ $s -le 256 ] && sips -z $((s*2)) $((s*2)) assets/icon-512.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
-done
-iconutil -c icns "$ICONSET" -o "$OUT/Contents/Resources/AppIcon.icns"
+# icon: on macOS 26 an app icon must come from an Icon Composer icon (assets/Seer.icon) compiled into Assets.car,
+# or the system draws it shrunk inside a grey frame; actool (Xcode) compiles it, with Seer.icns for older macOS.
+# Without Xcode: AppIcon.icns from the macOS master (assets/icon-macos-1024.png).
+ICON_FILE=AppIcon
+if xcrun --find actool >/dev/null 2>&1; then
+  xcrun actool assets/Seer.icon --compile "$OUT/Contents/Resources" --platform macosx --minimum-deployment-target 14.0 \
+    --app-icon Seer --output-partial-info-plist "$(mktemp -d)/partial.plist" >/dev/null
+  ICON_FILE=Seer
+else
+  ICONSET="$(mktemp -d)/AppIcon.iconset"; mkdir -p "$ICONSET"
+  for s in 16 32 64 128 256 512; do
+    sips -z $s $s assets/icon-macos-1024.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+    [ $s -le 256 ] && sips -z $((s*2)) $((s*2)) assets/icon-macos-1024.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$ICONSET" -o "$OUT/Contents/Resources/AppIcon.icns"
+fi
 
-cat > "$OUT/Contents/Info.plist" <<'PLIST'
+cat > "$OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -36,7 +45,8 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Seer</string>
 <key>CFBundleDisplayName</key><string>Seer</string>
 <key>CFBundleExecutable</key><string>Seer</string>
-<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleIconFile</key><string>$ICON_FILE</string>
+<key>CFBundleIconName</key><string>Seer</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2</string>
 <key>CFBundleVersion</key><string>2</string>
@@ -46,10 +56,17 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 
-# Signed ad hoc. (An Apple Development signature gets the app flagged as malware and trashed by Gatekeeper.) macOS
-# ties Screen Recording and Accessibility to this exact build, so a rebuild asks for both again: rebuild only when
-# the Swift app, node or cloudflared change. Seer's own code changes go out with scripts/deploy-code.sh instead.
-codesign --force --deep --sign - "$OUT"
+# Signed with "Seer Local Signing" (scripts/make-signing-cert.sh, a self-signed certificate in this Mac's
+# keychain): macOS then ties Screen Recording and Accessibility to the certificate, and a rebuild keeps both.
+# Without it, ad hoc: macOS ties them to this exact build and every rebuild asks for both again.
+# (Never an Apple Development certificate: Gatekeeper flags that build as malware and offers to trash it.)
+if security find-certificate -c "Seer Local Signing" >/dev/null 2>&1; then
+  codesign --force --deep --sign "Seer Local Signing" "$OUT"
+  echo "signed with Seer Local Signing: permissions carry over"
+else
+  codesign --force --deep --sign - "$OUT"
+  echo "signed ad hoc: macOS will ask for Screen Recording and Accessibility again (scripts/make-signing-cert.sh fixes that)"
+fi
 xattr -cr "$OUT"
 echo "built $OUT ($(du -sh "$OUT" | cut -f1))"
 

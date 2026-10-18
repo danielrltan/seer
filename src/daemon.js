@@ -16,6 +16,7 @@ import { settingsPage } from './settingspage.js';
 import { settings, applySettings, FREEZABLE } from './settings.js';
 import { hooksInstalled, installHooks } from './hooks.js';
 import { runningAgents } from './agents.js';
+import { ICON_V, ICON_HEAD, iconCache } from './icons.js';
 import { sleepDisplay, freezeApps, thawAll, frozenCount, muteOutput, unmuteOutput } from './headless.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
@@ -64,7 +65,7 @@ pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;p
 `;
 const EYE = `<svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true"><path d="M1 7C4 2 7.5 1 11 1s7 1 10 6c-3 5-6.5 6-10 6S4 12 1 7Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="7" r="2.6" fill="#00e676"/></svg>`;
 
-export const APP_HEAD = `<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png?v=3"><link rel="icon" href="/favicon.svg?v=3" type="image/svg+xml"><link rel="icon" href="/icon-32.png?v=3" sizes="32x32" type="image/png">
+export const APP_HEAD = `${ICON_HEAD}
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Seer"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`;
 
 function page(title, body) {
@@ -132,16 +133,16 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({
         name: 'Seer', short_name: 'Seer', start_url: '/desktop', scope: '/', display: 'standalone', orientation: 'any',
         background_color: '#000000', theme_color: '#000000',
-        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }, { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
+        icons: [{ src: `/icon-192.png?v=${ICON_V}`, sizes: '192x192', type: 'image/png' }, { src: `/icon-512.png?v=${ICON_V}`, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
       }));
     }
     // Icons, favicon and manifest are the only paths open without sign-in (a Cloudflare Access bypass, `seer
     // public assets`): iOS fetches a home-screen icon without the login, so behind it the icon never loaded.
-    if (url.pathname === '/favicon.svg') { res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400' }); return res.end(fs.readFileSync(new URL('../assets/logo/seer-favicon.svg', import.meta.url))); }
-    if (url.pathname === '/favicon.ico') { res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=3600' }); return res.end(fs.readFileSync(new URL('../assets/icon-32.png', import.meta.url))); }
+    if (url.pathname === '/favicon.svg') { res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': iconCache(url) }); return res.end(fs.readFileSync(new URL('../assets/logo/seer-favicon.svg', import.meta.url))); }
+    if (url.pathname === '/favicon.ico') { res.writeHead(200, { 'content-type': 'image/png', 'cache-control': iconCache(url) }); return res.end(fs.readFileSync(new URL('../assets/icon-32.png', import.meta.url))); }
     const icon = url.pathname.match(/^\/icon-(32|180|192|512)\.png$/);
     if (icon) {
-      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' });
+      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': iconCache(url) });
       return res.end(fs.readFileSync(new URL(`../assets/icon-${icon[1]}.png`, import.meta.url)));
     }
     // Mac view. With the screen stream on: a real Chrome window on the Mac, shown through the stream cropped to it
