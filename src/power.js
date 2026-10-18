@@ -90,7 +90,10 @@ export function decide(i) {
     mode: !running ? 'sleep allowed' : headless ? 'headless' : 'awake',      // also the battery drain's state
     caffeinate: running, disableSleep, lowPower,
     screenOff: closed && !i.watching && !i.inUse && !!set.screenOff,
-    freeze: headless && !!set.freeze, mute: headless && !!set.mute,
+    // Nobody at it or watching, lid closed: sound off and the list frozen, an agent working or not (music in a
+    // bag helps no one); with an agent working, browsers stay up ('quiet'), as it may be driving one.
+    freeze: running && closed && !i.watching && !i.inUse && !!set.freeze ? (busy ? 'quiet' : 'all') : false,
+    mute: running && closed && !i.watching && !i.inUse && !!set.mute,
     failover: running && closed,                                             // never switch the Wi-Fi under someone
     sleepHold: hold, closingSleeps, notes, batteryNote, windowUntil,
   };

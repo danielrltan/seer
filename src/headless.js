@@ -1,9 +1,10 @@
 // Headless: the lid is closed and the Mac stays awake for a reason (an agent, the stay-awake timer, the reachable
 // window), but nobody is streaming. Then it spends as little as it can:
 //   - the screen goes off at once: with sleep disabled, closing the lid no longer turns the panel off by itself
-//   - heavy apps are frozen (SIGSTOP, the app and its helper processes) while no agent works, and thawed the
-//     moment one does, or the lid opens, or a stream starts; terminals, editors, Claude, Docker, Xcode, dev
-//     servers and Seer's own processes are never on the list
+//   - heavy apps are frozen (SIGSTOP, the app and its helper processes), and thawed when the lid opens or a
+//     stream starts; while an agent works the browsers on the list keep running (it may be driving one).
+//     Terminals, editors, Claude, Docker, Xcode, dev servers and Seer's own processes are never on the list
+//   - sound off, whether or not an agent works: nobody is there to hear it
 // Every freeze is written to frozen.json before the signal, so a crash or restart thaws them (thawAll on start).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,8 +58,13 @@ async function appTree(bundleId) {
   return out;
 }
 
-export async function freezeApps(log) {
-  const j = journal(), list = settings().freezeApps, done = new Set(j.frozen.map(f => f.pid));
+// Browsers an agent may be driving: while one works they keep running, the rest of the list still freezes.
+export const BROWSERS = ['com.google.Chrome', 'com.apple.Safari', 'company.thebrowser.Browser', 'org.mozilla.firefox',
+  'com.microsoft.edgemac', 'com.brave.Browser', 'com.operasoftware.Opera', 'com.vivaldi.Vivaldi'];
+export const frozenBrowsers = () => journal().frozen.some(f => BROWSERS.includes(f.app));
+
+export async function freezeApps(log, { keepBrowsers = false } = {}) {
+  const j = journal(), list = settings().freezeApps.filter(b => !(keepBrowsers && BROWSERS.includes(b))), done = new Set(j.frozen.map(f => f.pid));
   let n = 0;
   for (const bundleId of list) {
     for (const pid of await appTree(bundleId)) {
@@ -71,14 +77,14 @@ export async function freezeApps(log) {
   if (n) log(`headless: froze ${n} processes (${list.filter(b => j.frozen.some(f => f.app === b)).join(', ')})`);
 }
 
-export async function thawAll(log) {
-  const j = journal();
-  if (!j.frozen.length) return;
+export async function thawAll(log, only = null) {
+  const j = journal(), thaw = j.frozen.filter(f => !only || only(f.app));
+  if (!thaw.length) return;
   let n = 0;
-  for (const f of j.frozen) {
+  for (const f of thaw) {
     if (f.start && (await startTime(f.pid)) !== f.start) continue;   // that pid is a different process now
     try { process.kill(f.pid, 'SIGCONT'); n++; } catch {}
   }
-  save({ frozen: [] });
-  log(`headless: thawed ${n} processes`);
+  save({ frozen: j.frozen.filter(f => !thaw.includes(f)) });
+  log(`headless: thawed ${n} processes${only ? ' (browsers, for an agent)' : ''}`);
 }

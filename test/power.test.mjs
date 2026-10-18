@@ -52,7 +52,8 @@ function invariants(name, over, d) {
   ok(!d.headless || (closed && !i.watching && !i.inUse && !busy), 'headless only with the lid closed, nobody there, no agent working');
   ok((d.running && d.label === 'Idling') === d.headless, 'held but Idling exactly when headless');
   ok(d.running ? ['Awake', 'Idling'].includes(d.label) : d.label !== 'Awake', 'Awake only when held');
-  ok(!d.freeze && !d.mute || d.headless, 'apps frozen and sound off only when headless');
+  ok(!d.freeze && !d.mute || (d.running && closed && !i.watching && !i.inUse), 'apps frozen and sound off only held, lid closed, nobody there');
+  ok(d.freeze !== 'all' || d.headless, 'browsers frozen too only when headless (no agent that may drive one)');
   ok(!d.countdown || d.running, 'a countdown only while held');
   ok(!d.countdown || d.countdown.until > i.now, 'a countdown is in the future');
   if (d.countdown?.kind === 'sleep') ok(closed && !i.watching && !busy && !i.why.stayUntil, 'to sleep only when only the reachable window holds it');
@@ -128,9 +129,9 @@ check('…the window ends: let go', { now: T + 9 * MIN + 1, lid: 'closed', why: 
 
 // ---- lid closed ----
 check('THE BUG: lid closed while an agent works: awake, no sleep countdown', { lid: 'closed', why: why.busyClosed },
-  { running: true, label: 'Awake', why: '1 agent active', countdown: null, headless: false, disableSleep: true, screenOff: true, freeze: false, mute: false });
+  { running: true, label: 'Awake', why: '1 agent active', countdown: null, headless: false, disableSleep: true, screenOff: true, freeze: 'quiet', mute: true });
 check('lid closed, agent finished: headless, counting down', { lid: 'closed', why: why.finished },
-  { running: true, label: 'Idling', countdown: { until: T + 9 * MIN, kind: 'sleep', from: T - 6 * MIN }, freeze: true, mute: true, lowPower: false, failover: true });
+  { running: true, label: 'Idling', countdown: { until: T + 9 * MIN, kind: 'sleep', from: T - 6 * MIN }, freeze: 'all', mute: true, lowPower: false, failover: true });
 check('lid closed, agent waiting on the owner: the window still ends', { lid: 'closed', why: why.waiting },
   { running: true, label: 'Idling', countdown: { until: T + 12 * MIN, kind: 'sleep', from: T - 3 * MIN } });
 check('lid closed, streaming: no countdown, screen on, nothing frozen', { lid: 'closed', why: why.streaming, watching: true },

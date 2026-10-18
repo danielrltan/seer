@@ -20,7 +20,7 @@ import { settings, applySettings, FREEZABLE } from './settings.js';
 import { hooksInstalled, installHooks } from './hooks.js';
 import { runningAgents } from './agents.js';
 import { ICON_V, ICON_HEAD, iconCache, FONT_V, MANIFEST } from './icons.js';
-import { sleepDisplay, freezeApps, thawAll, frozenCount, muteOutput, unmuteOutput } from './headless.js';
+import { sleepDisplay, freezeApps, thawAll, frozenCount, frozenBrowsers, BROWSERS, muteOutput, unmuteOutput } from './headless.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount, streamingNow } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
 import { WebSocketServer } from 'ws';
@@ -377,7 +377,10 @@ async function tickOnce() {
   ]);
   if (stopping) return;
   // A failed ioreg read keeps the last lid: 'unknown' counts as open and would end a closed Mac's window early.
-  if (cs && (cs.lid !== 'unknown' || lidState === 'unknown')) { lidState = cs.lid; external = cs.external; }
+  if (cs && (cs.lid !== 'unknown' || lidState === 'unknown')) {
+    if (cs.lid !== lidState && lidState !== 'unknown') log(`lid: ${cs.lid}${cs.external ? ' (external display)' : ''}`);
+    lidState = cs.lid; external = cs.external;
+  }
   lastBattery = b;
   const inUse = idle !== null && idle < 120;            // a key, click or trackpad touch in the last 2 minutes
   const watching = watchingNow();
@@ -398,8 +401,10 @@ async function tickOnce() {
   // watching is read again here: a viewer that connected during this tick has just woken the display (stream.js).
   if (d.screenOff && !watchingNow() && (!lastClosed || Date.now() - lastDark > 60_000)) { sleepDisplay(); lastDark = Date.now(); }
   lastClosed = d.closed;
-  if (d.freeze && !watchingNow()) await freezeApps(log).catch(e => log(`freeze: ${e.message}`));
-  else if (frozenCount()) await thawAll(log).catch(e => log(`thaw: ${e.message}`));
+  if (d.freeze && !watchingNow()) {
+    if (d.freeze === 'quiet' && frozenBrowsers()) await thawAll(log, b => BROWSERS.includes(b)).catch(e => log(`thaw: ${e.message}`));
+    await freezeApps(log, { keepBrowsers: d.freeze === 'quiet' }).catch(e => log(`freeze: ${e.message}`));
+  } else if (frozenCount()) await thawAll(log).catch(e => log(`thaw: ${e.message}`));
   if (d.mute) await muteOutput().catch(() => {});
   else await unmuteOutput().catch(() => {});
   if (!d.caffeinate) stopCaffeinate();
