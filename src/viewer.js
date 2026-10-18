@@ -52,6 +52,15 @@ body.short-vp #app{padding-bottom:10px}
   box-shadow:0 0 0 .5px rgba(255,255,255,.17),0 18px 44px rgba(0,0,0,.7)}
 #wrap{transform-origin:0 0}
 canvas{display:block}
+/* The Mac's pointer, ringed in green so it is easy to find on a small screen, and a ring that spreads where a
+   click lands. Drawn on the phone at the position the Mac reports; the Mac's own cursor is unchanged. */
+#halo{position:absolute;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;pointer-events:none;z-index:2;opacity:0;
+  border:2.5px solid var(--live);background:rgba(43,240,138,.13);box-shadow:0 0 12px var(--glow),inset 0 0 8px rgba(43,240,138,.25);transition:opacity .35s}
+#halo.on{opacity:1}#halo.on.rest{opacity:.55}
+.ripple{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;pointer-events:none;z-index:2;
+  border:2.5px solid var(--live);box-shadow:0 0 10px var(--glow);animation:ripple .5s cubic-bezier(.2,.7,.3,1) forwards}
+.ripple.right{border-style:dashed}
+@keyframes ripple{from{transform:scale(.5);opacity:1}to{transform:scale(2.7);opacity:0}}
 #pad{position:relative;flex:1 1 0;min-height:0;border-radius:26px;-webkit-backdrop-filter:none;backdrop-filter:none;touch-action:none;-webkit-user-select:none;user-select:none;
   background:${GRAIN},radial-gradient(130% 80% at 50% -20%,rgba(255,255,255,.075),transparent 60%),linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01)),rgba(14,19,17,.5);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1px 0 rgba(255,255,255,.03),inset 0 0 0 .5px rgba(255,255,255,.05),0 22px 50px rgba(0,0,0,.55)}
@@ -118,7 +127,7 @@ canvas{display:block}
 }
 </style></head><body>
 <div id="app">
-<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="msg" class="glass">Connecting</div></div>
+<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="halo"></div><div id="msg" class="glass">Connecting</div></div>
 <div id="pad" class="glass"><i class="groove l" id="groove-l"></i><i class="groove r" id="groove-r"></i></div>
 <div id="foot">
 <div id="keys" class="glass">${KEYS.map(([k, l]) => `<button class="key" data-key="${k}" aria-label="${k}">${l}</button>`).join('')}</div>
@@ -154,8 +163,9 @@ function drawJpeg(buf) {
 }
 
 function send(obj) {
-  if (typeof obj.x === 'number' && typeof obj.y === 'number') cursor = { x: obj.x, y: obj.y };
+  if (typeof obj.x === 'number' && typeof obj.y === 'number') { cursor = { x: obj.x, y: obj.y }; halo(); }
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+  if (CLICKS.includes(obj.t)) ripple(obj.button === 'right');
 }
 
 function makeDecoder(cfg) {
@@ -200,9 +210,9 @@ function connect() {
       const m = JSON.parse(ev.data);
       if (m.error) status(m.error, 'fail');
       if ('dock' in m && $('dock')) $('dock').classList.toggle('on', m.dock);
-      if ('textFocus' in m) textFocus(m.textFocus);
+      if ('textFocus' in m) textFocus(m.textFocus, m.tapped !== false);
       if (typeof m.clip === 'string') pendingClip = m.clip;
-      if (m.cursor && typeof m.cursor.x === 'number' && typeof m.cursor.y === 'number') { cursor = m.cursor; followPointer(); }   // the Mac's pointer, as fractions of its screen
+      if (m.cursor && typeof m.cursor.x === 'number' && typeof m.cursor.y === 'number') { cursor = m.cursor; followPointer(); halo(); }   // the Mac's pointer, as fractions of its screen
       return;
     }
     const buf = new Uint8Array(ev.data), type = buf[0];
@@ -300,6 +310,7 @@ function applyView() {
   if (zoom <= 1.001) { zoom = 1; panX = panY = 0; }
   clampPan(); wrap.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')';
   $('unzoom').hidden = zoom === 1;
+  halo();
 }
 // Zoom to nz keeping the point (px, py) still (in the screen's own unzoomed CSS px), then move by (dx, dy).
 function zoomAt(nz, px, py, dx, dy) {
@@ -325,6 +336,29 @@ function followPointer() {
   if (panX !== bx || panY !== by) applyView();
 }
 $('unzoom').onclick = () => { zoom = 1; applyView(); };
+
+// The halo follows the pointer (on the stage, so it keeps its size when zoomed), dims after a moment at rest,
+// and hides when the pointer is out of sight. A click spreads a ring from where it lands.
+const CLICKS = ['down', 'click', 'press'];
+let haloAt = null, restTimer = 0;
+function halo() {
+  const p = pointerOnView(), el = $('halo');
+  if (!p) return;                                       // unknown for a moment after a nudge: the Mac reports it next
+  const x = wrap.offsetLeft + p.px, y = wrap.offsetTop + p.py, inside = x >= 0 && y >= 0 && x <= stage.clientWidth && y <= stage.clientHeight;
+  if (haloAt && Math.abs(haloAt.x - x) + Math.abs(haloAt.y - y) > 0.5) { el.classList.remove('rest'); clearTimeout(restTimer); restTimer = setTimeout(() => el.classList.add('rest'), 1800); }
+  haloAt = { x, y };
+  el.style.left = x + 'px'; el.style.top = y + 'px'; el.classList.toggle('on', inside);
+}
+function ripple(right) {
+  // A trackpad click has no position of its own: it lands where the halo is (the Mac reports it within 33 ms).
+  setTimeout(() => {
+    if (!haloAt) return;
+    const r = document.createElement('div');
+    r.className = 'ripple' + (right ? ' right' : ''); r.style.left = haloAt.x + 'px'; r.style.top = haloAt.y + 'px';
+    r.addEventListener('animationend', () => r.remove());
+    stage.appendChild(r);
+  }, cursor ? 0 : 40);
+}
 
 function toRemote(cx, cy) {
   const r = canvas.getBoundingClientRect(), nx = (cx - r.left) / r.width, ny = (cy - r.top) / r.height;
@@ -488,9 +522,11 @@ if ($('dock')) $('dock').onclick = () => send({ t: 'dock' });
 // ---------- keyboard ----------
 // iOS opens the keyboard only inside a tap, and the Mac says "a text field has focus" a moment after the tap.
 // So every tap focuses the hidden input with inputmode=none (no keyboard yet); when the Mac reports a text
-// field, inputmode switches to text, which brings the keyboard up on the input that already has focus. If iOS
-// does not (the screen did not shrink), a Type button appears instead: one tap. Opened by the Mac, the keyboard
-// also closes when focus leaves the text field; opened by hand (the keyboard button), it stays.
+// field the tap landed on, inputmode switches to text, which brings the keyboard up on the input that already has
+// focus. If iOS does not (the screen did not shrink), a Type button appears instead: one tap. A field that took
+// focus by itself (a new tab's address bar, a page's search box) only shows the Type button for a few seconds.
+// Opened by the Mac, the keyboard also closes when focus leaves the text field; opened by hand (the keyboard
+// button), it stays.
 const input = $('type');
 let kbOpen = false, kbAuto = false, ourBlur = false;
 const keyboardUp = () => window.visualViewport && visualViewport.height < window.innerHeight * 0.8;
@@ -504,13 +540,17 @@ input.addEventListener('blur', () => { if (!ourBlur && kbOpen) closedKeys(); });
 // Buttons must not take focus from the input on press, or every key-bar tap would close the keyboard.
 document.querySelectorAll('#app button').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
 function primeKeyboard() { if (!kbOpen) { input.setAttribute('inputmode', 'none'); input.focus({ preventScroll: true }); } }
-function textFocus(on) {
-  if (on && !kbOpen) {
+let pillTimer = 0;
+function pill(ms) { clearTimeout(pillTimer); $('typepill').classList.add('show'); if (ms) pillTimer = setTimeout(() => $('typepill').classList.remove('show'), ms); }
+function textFocus(on, tapped) {
+  if (on && !kbOpen && tapped) {
     input.setAttribute('inputmode', 'text');
     showKeys(true);
-    setTimeout(() => { if (kbAuto && !keyboardUp()) $('typepill').classList.add('show'); }, 450);
+    setTimeout(() => { if (kbAuto && !keyboardUp()) pill(0); }, 450);
+  } else if (on && !kbOpen) {
+    pill(4000);                                        // focus it did not ask for: offer, don't open
   } else if (!on) {
-    $('typepill').classList.remove('show');
+    clearTimeout(pillTimer); $('typepill').classList.remove('show');
     if (kbAuto) hideKeys();
   }
 }

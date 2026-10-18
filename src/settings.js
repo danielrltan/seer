@@ -31,6 +31,7 @@ export const SPEC = {
   macViewCloseMin:  { type: 'int', def: 2, min: 1, max: 30 },
   scrollSpeed:      { type: 'int', def: 100, min: 25, max: 200 },   // % of finger-for-finger
   pointerSpeed:     { type: 'int', def: 100, min: 25, max: 300 },   // % of what the phone's trackpad sends
+  trackpadMagnet:   { type: 'bool', def: true },         // the trackpad's pointer slows on buttons and drifts onto them
   // app
   launchAtLogin:    { type: 'bool', def: true },
 };

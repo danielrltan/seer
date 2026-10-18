@@ -5,6 +5,7 @@
 //   in:  JSON lines  {"cmd":"start","maxWidth":1512,"fps":30,"bitrate":3000000[,"virtual":true]} | {"cmd":"stop"} | {"cmd":"keyframe"}
 //                    {"cmd":"input","t":"down|up|move|scroll|text|key", ...}   x,y in 0...1 of the main display
 //                    {"cmd":"input","t":"nudge|press|release|click|scroll", ...} relative, at the cursor (Pad)
+//                    nudge's "magnet": false turns off its target assistance (the trackpadMagnet setting)
 //   out: frames      [u8 type][u32 length][payload]
 //        type 1 config: [u16 json length][json {codec,width,height}][avcC]
 //        type 2 key / 3 delta: [u64 timestamp µs][H.264 access unit, AVCC]
@@ -457,38 +458,56 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
 let capture = Capture()
 
 // ---------- what has focus ----------
-// After a click or Tab, is a text field focused on the Mac? The viewer uses it to bring up the phone's keyboard.
+// After a click or Tab, is a text field focused on the Mac, and did the click land on it? The viewer brings up
+// the phone's keyboard only for a field the owner tapped: a field that took focus by itself (a new Chrome tab's
+// address bar, a page's search box) gets the small Type button instead.
 // A text control by role, or anything whose value can be set and that has a text selection (web text fields).
 enum Focus {
     static let queue = DispatchQueue(label: "seer.focus")
-    static var last: Bool?
-    static func isText() -> Bool {
+    static var last: (text: Bool, tapped: Bool)?
+    static func check(at p: CGPoint?) -> (text: Bool, tapped: Bool) {
         let sys = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(sys, 0.3)
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(sys, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let ref = focused, CFGetTypeID(ref) == AXUIElementGetTypeID() else { return false }
+              let ref = focused, CFGetTypeID(ref) == AXUIElementGetTypeID() else { return (false, false) }
         let el = ref as! AXUIElement
         AXUIElementSetMessagingTimeout(el, 0.3)
         var roleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
         let role = (roleRef as? String) ?? ""
-        if ["AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXSecureTextField"].contains(role) { return true }
-        var settable = DarwinBoolean(false)
-        var range: CFTypeRef?
-        return AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
-            && AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &range) == .success
+        var text = ["AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXSecureTextField"].contains(role)
+        if !text {
+            var settable = DarwinBoolean(false)
+            var range: CFTypeRef?
+            text = AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
+                && AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &range) == .success
+        }
+        guard text, let p else { return (text, false) }
+        return (true, frame(el).insetBy(dx: -6, dy: -6).contains(p))
+    }
+    // The element's frame in global top-left points, the same space as a click; empty if it has none.
+    static func frame(_ el: AXUIElement) -> CGRect {
+        var posRef: CFTypeRef?, sizeRef: CFTypeRef?
+        var pos = CGPoint.zero, size = CGSize.zero
+        guard AXUIElementCopyAttributeValue(el, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(el, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let pr = posRef, let sr = sizeRef, CFGetTypeID(pr) == AXValueGetTypeID(), CFGetTypeID(sr) == AXValueGetTypeID(),
+              AXValueGetValue(pr as! AXValue, .cgPoint, &pos), AXValueGetValue(sr as! AXValue, .cgSize, &size) else { return .null }
+        return CGRect(origin: pos, size: size)
     }
     // Checked twice (apps take a moment to move focus); reported every time after a click, so the viewer can act.
-    static func checkSoon() {
+    // at: where the click landed (nil for a key: Tab or Enter moving focus is not a tap on a field).
+    static func checkSoon(at p: CGPoint? = nil) {
         for delay in [0.15, 0.5] {
             queue.asyncAfter(deadline: .now() + delay) {
-                let text = isText()
-                if delay == 0.15 || text != last { link.status(["textFocus": text]) }
-                last = text
+                let r = check(at: p)
+                if delay == 0.15 || r.text != last?.text || r.tapped != last?.tapped { link.status(["textFocus": r.text, "tapped": r.tapped]) }
+                last = r
             }
         }
     }
+    static var cursor: CGPoint { CGEvent(source: nil)?.location ?? .zero }
 }
 
 // ---------- input ----------
@@ -536,7 +555,7 @@ enum Input {
             e?.setIntegerValueField(.mouseEventClickState, value: Int64(right ? 1 : lastClick.count))
             e?.flags = flags(j)
             e?.post(tap: .cghidEventTap)
-            if !down && !right { Focus.checkSoon() }
+            if !down && !right { Focus.checkSoon(at: p) }
         case "scroll", "nudge", "press", "release", "click":
             Pad.queue.async { Pad.handle(j) }                                  // relative: the trackpad's own queue
         case "text":
@@ -621,8 +640,24 @@ enum Pad {
     static let flickMin = 0.1, glideMin = 0.02        // points per ms
     static let scrollShare = 1.0 / 3, pointerShare = 0.5   // what each stage passes on per 8 ms
 
+    // target assistance (Assist below finds what is under the pointer; all of this state lives on this queue)
+    static var magnet = true                          // the trackpadMagnet setting, carried by every nudge
+    static var vel = (x: 0.0, y: 0.0)                 // the finger's pointer velocity, points per ms, smoothed
+    static var dir = (x: 0.0, y: 0.0)                 // which way it last went (unit), kept after it stops
+    static var nudgedAt = 0.0
+    static var target: Assist.Hit?                    // the last hit test's answer
+    static var asking = false, askLater = false, askedAt = 0.0, epoch = 0
+    static var drifting = false                       // the magnet is moving the pointer: the pump keeps running
+    static var pulled = 0.0                           // points the magnet has moved it toward this target
+    // Friction: full below frictionFrom, fading out by frictionTo (points per ms, after the phone's acceleration:
+    // a slow precise finger is 0.05-0.25, a 0.3 px/ms finger 0.8, a flick 2-4). The magnet acts below pullBelow,
+    // at most pullStep a tick (per 8 ms) and maxPull in all per target, and only within pullFor of the last nudge.
+    static let frictionGain = 0.5, frictionFrom = 0.25, frictionTo = 0.8
+    static let pullBelow = 0.2, pullShare = 0.2, pullStep = 1.5, maxPull = 12.0, pullFor = 0.6, reach = 6.0
+    static let askEvery = 0.04, freshFor = 0.5        // at most 25 hit tests a second; an answer older is ignored
+
     static func now() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1e9 }
-    static var busy: Bool { !moves.isEmpty || !scrolls.isEmpty || ending || gliding }
+    static var busy: Bool { !moves.isEmpty || !scrolls.isEmpty || ending || gliding || drifting }
 
     static func handle(_ j: [String: Any]) {
         let num = { (k: String) in (j[k] as? Double).flatMap { $0.isFinite ? $0 : nil } ?? 0 }
@@ -631,21 +666,27 @@ enum Pad {
         case "nudge":
             stopGlide(keep: false)
             if moves.isEmpty { sync() }
-            moves.add(num("dx"), num("dy"))
+            let dx = num("dx"), dy = num("dy")
+            magnet = (j["magnet"] as? Bool) ?? true
+            if !magnet { forget() }
+            track(dx, dy)
+            let g = friction()
+            moves.add(dx * g, dy * g)
         case "press", "release":
-            stopGlide(keep: false); flushMove(); sync()
+            stopGlide(keep: false); flushMove(); sync(); forget()
             let down = j["t"] as? String == "press"
             button(right ? (down ? .rightMouseDown : .rightMouseUp) : (down ? .leftMouseDown : .leftMouseUp), right, 1, j)
             if down { held = right ? .right : .left } else if held == (right ? .right : .left) { held = nil }
-            if !down && !right { Focus.checkSoon() }
+            if !down && !right { Focus.checkSoon(at: Focus.cursor) }
         case "click":
-            stopGlide(keep: false); flushMove(); sync()
+            stopGlide(keep: false); flushMove(); sync(); forget()
             // One click per message: the phone sent the earlier taps, so a double click is down(2) up(2) here.
             let count = min(max((j["count"] as? Int) ?? 1, 1), 3)
             button(right ? .rightMouseDown : .leftMouseDown, right, count, j)
             button(right ? .rightMouseUp : .leftMouseUp, right, count, j)
-            if !right { Focus.checkSoon() }
+            if !right { Focus.checkSoon(at: Focus.cursor) }
         case "scroll":
+            forget()                                                            // the page moves: frames go stale
             switch j["phase"] as? String {
             case "begin":
                 stopGlide(keep: true)
@@ -671,6 +712,89 @@ enum Pad {
         kick()
     }
 
+    // ---------- target assistance ----------
+    // Aim assist for buttons: over something clickable, a slow finger moves the pointer at half speed (friction),
+    // and once it slows or stops the pointer drifts the last few points into the target (magnet). A fast move
+    // passes over targets untouched, and with nothing clickable near, every nudge moves exactly as before.
+    // Assist hit-tests Accessibility on its own queue; here only its cached answer is read, so a slow app
+    // (Chrome) delays the assist, never the pointer.
+    static func track(_ dx: Double, _ dy: Double) {
+        let t = now(), dt = min(max((t - nudgedAt) * 1000, 1), 100)
+        let inst = (x: dx / dt, y: dy / dt)
+        if t - nudgedAt > 0.1 { vel = inst }                                    // a new movement
+        else { let w = 1 - exp(-dt / 30); vel.x += w * (inst.x - vel.x); vel.y += w * (inst.y - vel.y) }
+        nudgedAt = t
+        let v = hypot(vel.x, vel.y)
+        if v > 0.02 { dir = (vel.x / v, vel.y / v) }
+    }
+    static var fingerSpeed: Double { now() - nudgedAt > 0.06 ? 0 : hypot(vel.x, vel.y) }
+
+    // The cached target, if it is fresh and the point is on it (or within `slack` of it).
+    static func onTarget(_ p: CGPoint, slack: Double) -> CGRect? {
+        guard magnet, held == nil, let h = target, !h.frame.isNull, now() - h.time < freshFor,
+              h.frame.insetBy(dx: -slack, dy: -slack).contains(p) else { return nil }
+        return h.frame
+    }
+
+    // The gain for this nudge: 1 unless the pointer is (heading) onto a target and the finger is slow.
+    static func friction() -> Double {
+        guard onTarget(CGPoint(x: cursor.x + moves.x, y: cursor.y + moves.y), slack: 2) != nil else { return 1 }
+        let t = min(max((hypot(vel.x, vel.y) - frictionFrom) / (frictionTo - frictionFrom), 0), 1)
+        return frictionGain + (1 - frictionGain) * t * t * (3 - 2 * t)
+    }
+
+    // A click, a scroll, a reset or the setting off: what was under the pointer may have changed or moved, and an
+    // answer still on its way is for the old state (epoch).
+    static func forget() { target = nil; drifting = false; pulled = 0; epoch += 1 }
+
+    // Ask what is under the pointer: at most every askEvery, one question at a time, and once more where it
+    // comes to rest (with the probes around it, for a target just short of the pointer).
+    static func want() {
+        guard magnet, held == nil else { return }
+        if asking || askLater { return }
+        let wait = askedAt + askEvery - now()
+        if wait > 0 {
+            askLater = true
+            queue.asyncAfter(deadline: .now() + wait) { askLater = false; want() }
+            return
+        }
+        asking = true; askedAt = now()
+        let p = cursor, rest = moves.isEmpty, d = dir, e = epoch
+        Assist.queue.async {
+            let h = Assist.hit(at: p, rest: rest, dir: d)
+            queue.async { got(h, e) }
+        }
+    }
+
+    static func got(_ h: Assist.Hit, _ e: Int) {
+        asking = false
+        guard e == epoch, magnet else { return }
+        if target.map({ !$0.frame.equalTo(h.frame) }) ?? true { pulled = 0 }   // a new target: a new budget
+        target = h
+        if hypot(cursor.x - h.at.x, cursor.y - h.at.y) >= 1 || (moves.isEmpty && !h.rest) { want() }
+        if !drifting { drifting = true; kick() }                                // the tick decides; it stops if not
+    }
+
+    // One tick of the magnet: toward the target's centre band (its middle, past min(30%, 8 pt) from each edge),
+    // a share of the way each tick, capped, and not on an axis the finger was leaving it along. False when done.
+    static func pull(_ dt: Double) -> Bool {
+        guard !touching, !ending, !gliding, scrolls.isEmpty, pulled < maxPull, now() - nudgedAt < pullFor,
+              fingerSpeed < pullBelow, let f = onTarget(cursor, slack: reach) else { return false }
+        func off(_ c: Double, _ lo: Double, _ hi: Double, _ d: Double) -> Double {
+            let m = min((hi - lo) * 0.3, 8), a = lo + m, b = hi - m
+            let o = c < a ? a - c : c > b ? b - c : 0
+            return o * d < -0.3 * abs(o) ? 0 : o                              // leaving along this axis: let it go
+        }
+        let ox = off(cursor.x, f.minX, f.maxX, dir.x), oy = off(cursor.y, f.minY, f.maxY, dir.y)
+        let dist = hypot(ox, oy)
+        guard dist >= 0.5 else { return false }
+        let k = 1 - pow(1 - pullShare, dt / 8)
+        let step = min(dist * k, pullStep * dt / 8, maxPull - pulled)
+        pulled += step
+        move(ox / dist * step, oy / dist * step)
+        return true
+    }
+
     // ---------- the pump ----------
     static func kick() {
         guard busy, timer == nil else { return }
@@ -687,7 +811,8 @@ enum Pad {
         lastTick = t
         let share = { (per8: Double) in 1 - pow(1 - per8, dt / 8) }             // per 8 ms, whatever the tick
         let take = share(scrollShare)
-        if !moves.isEmpty { let s = moves.step(share(pointerShare), tiny: 0.5); move(s.x, s.y) }
+        if !moves.isEmpty { let s = moves.step(share(pointerShare), tiny: 0.5); move(s.x, s.y); want() }
+        drifting = pull(dt)
         if touching && ending && flick != (0, 0) && began {
             // A flick: the gesture ends now and the glide starts at the release speed, paying out what the
             // reservoir still owes at that speed, so there is no dip while it drains and no lurch after.
@@ -754,7 +879,7 @@ enum Pad {
 
     // Everything let go: the viewer left or the stream stopped. A held button left down would stay down.
     static func reset() {
-        moves = Lag()
+        moves = Lag(); forget(); vel = (0, 0); dir = (0, 0)
         if let b = held { button(b == .right ? .rightMouseUp : .leftMouseUp, b == .right, 1, [:]); held = nil }
         if touching && began { scroll(0, 0, phase: 4, momentum: 0, always: true) }
         touching = false; began = false; ending = false; scrolls = Lag(); rem = (0, 0)
@@ -816,6 +941,89 @@ enum Pad {
         e.setIntegerValueField(.mouseEventClickState, value: Int64(count))
         e.flags = Input.flags(j)
         post(e)
+    }
+}
+
+// ---------- what is under the pointer, for the trackpad's target assistance ----------
+// Hit tests run here, never on Pad's queue: an app slow to answer Accessibility (Chrome, busy) only makes the
+// answer late, and Pad ignores late answers. Each call waits at most `timeout`; any failure is "nothing there".
+enum Assist {
+    struct Hit { var at: CGPoint; var frame: CGRect; var rest: Bool; var time: Double }   // frame .null: nothing
+    static var queue: DispatchQueue { Focus.queue }                    // one queue for every AX call: the messaging timeout is process-wide
+    static let sys = AXUIElementCreateSystemWide()
+    static let timeout: Float = 0.08
+    // Clickable by role. Anything else counts if it offers AXPress (web buttons and links that are divs, images).
+    static let clickRoles: Set<String> = ["AXButton", "AXLink", "AXMenuItem", "AXMenuBarItem", "AXCheckBox",
+        "AXRadioButton", "AXPopUpButton", "AXMenuButton", "AXTab", "AXDisclosureTriangle", "AXDockItem", "AXIncrementor"]
+    // Never a target, and nothing above them is either: text to click into, and the containers of everything.
+    static let stopRoles: Set<String> = ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox", "AXSecureTextField",
+        "AXWebArea", "AXScrollArea", "AXWindow", "AXApplication", "AXSheet", "AXDrawer", "AXSlider", "AXScrollBar",
+        "AXSplitter", "AXTable", "AXOutline", "AXBrowser", "AXList", "AXMenuBar", "AXMenu"]
+    static let textRoles: Set<String> = ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox", "AXSecureTextField", "AXSlider"]
+    static let maxSize = CGSize(width: 260, height: 120)                 // bigger is a container, not a button
+
+    static func hit(at p: CGPoint, rest: Bool, dir: (x: Double, y: Double)) -> Hit {
+        let t0 = Pad.now()
+        func done(_ f: CGRect) -> Hit { Hit(at: p, frame: f, rest: rest, time: Pad.now()) }
+        guard AXIsProcessTrusted() else { return done(.null) }
+        let (f, blocking) = clickable(at: p)
+        if !f.isNull || !rest || blocking { return done(f) }
+        // At rest on nothing: a target just ahead of where the finger was going, or to either side of it (not
+        // behind: the pointer left that one). Only one stop's worth, and not if the first answer was already slow.
+        guard Pad.now() - t0 < 0.05 else { return done(.null) }
+        let d = hypot(dir.x, dir.y) > 0.5 ? dir : (x: 1.0, y: 0.0)
+        let ahead = [(d.x, d.y), (-d.y, d.x), (d.y, -d.x)] + (hypot(dir.x, dir.y) > 0.5 ? [] : [(-1.0, 0.0)])
+        for (ux, uy) in ahead {
+            let q = CGPoint(x: p.x + ux * Pad.reach, y: p.y + uy * Pad.reach)
+            let g = clickable(at: q).frame
+            if !g.isNull && g.insetBy(dx: -Pad.reach, dy: -Pad.reach).contains(p) { return done(g) }
+        }
+        return done(.null)
+    }
+
+    // The frame of the clickable element at p (or .null), and whether p is on something that rules out a pull
+    // toward a neighbour (a text field: clicking near its edge is clicking into it).
+    static func clickable(at p: CGPoint) -> (frame: CGRect, blocking: Bool) {
+        AXUIElementSetMessagingTimeout(sys, timeout)
+        var hitRef: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(p.y), &hitRef) == .success, var el = hitRef else { return (.null, false) }
+        var pressable: CGRect?
+        for level in 0...3 {
+            AXUIElementSetMessagingTimeout(el, timeout)
+            guard let a = attributes(el) else { break }
+            if stopRoles.contains(a.role) { return (.null, level == 0 && textRoles.contains(a.role)) }
+            if a.frame.isNull || a.frame.width > maxSize.width || a.frame.height > maxSize.height { break }
+            if !a.frame.insetBy(dx: -2, dy: -2).contains(p) { break }            // a frame that is not where it was hit
+            if clickRoles.contains(a.role) { return (a.frame, false) }
+            if pressable == nil && presses(el) { pressable = a.frame }
+            guard let up = a.parent else { break }
+            if role(up) == "AXTabGroup" { return (a.frame, false) }               // a tab, whatever it calls itself
+            el = up
+        }
+        return (pressable ?? .null, false)
+    }
+
+    // Role, frame and parent in one round trip to the app.
+    static func attributes(_ el: AXUIElement) -> (role: String, frame: CGRect, parent: AXUIElement?)? {
+        let names = [kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXParentAttribute] as CFArray
+        var out: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(el, names, AXCopyMultipleAttributeOptions(rawValue: 0), &out) == .success,
+              let v = out as? [AnyObject], v.count == 4, let role = v[0] as? String else { return nil }
+        var pos = CGPoint.zero, size = CGSize.zero, frame = CGRect.null
+        if CFGetTypeID(v[1]) == AXValueGetTypeID(), CFGetTypeID(v[2]) == AXValueGetTypeID(),
+           AXValueGetValue(v[1] as! AXValue, .cgPoint, &pos), AXValueGetValue(v[2] as! AXValue, .cgSize, &size),
+           size.width > 0, size.height > 0 { frame = CGRect(origin: pos, size: size) }
+        let parent = CFGetTypeID(v[3]) == AXUIElementGetTypeID() ? (v[3] as! AXUIElement) : nil
+        return (role, frame, parent)
+    }
+    static func role(_ el: AXUIElement) -> String {
+        AXUIElementSetMessagingTimeout(el, timeout)
+        var r: CFTypeRef?
+        return AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &r) == .success ? (r as? String) ?? "" : ""
+    }
+    static func presses(_ el: AXUIElement) -> Bool {
+        var names: CFArray?
+        return AXUIElementCopyActionNames(el, &names) == .success && ((names as? [String]) ?? []).contains(kAXPressAction as String)
     }
 }
 

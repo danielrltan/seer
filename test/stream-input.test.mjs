@@ -1,6 +1,6 @@
 // What the viewer may send for input, and how it reaches SeerStream: node test/stream-input.test.mjs
 import assert from 'node:assert/strict';
-import { cleanInput, flipScroll, scaleInput } from '../src/stream.js';
+import { cleanInput, flipScroll, scaleInput, withMagnet } from '../src/stream.js';
 import { SPEC } from '../src/settings.js';
 
 let n = 0;
@@ -76,6 +76,17 @@ test('scroll speed scales scroll and its velocity, pointer speed scales nudges',
 
 test('pointerSpeed is a setting beside scrollSpeed', () => {
   assert.deepEqual(SPEC.pointerSpeed, { type: 'int', def: 100, min: 25, max: 300 });
+});
+
+test('trackpadMagnet is a setting, on by default, and only an off one reaches the nudges', () => {
+  assert.deepEqual(SPEC.trackpadMagnet, { type: 'bool', def: true });
+  const nudge = cleanInput({ t: 'nudge', dx: 3, dy: -2 });
+  assert.equal(withMagnet(nudge, { trackpadMagnet: true }), nudge, 'on: the nudge goes as it was');
+  assert.equal(withMagnet(nudge, {}), nudge, 'unset: on');
+  same(withMagnet(nudge, { trackpadMagnet: false }), { cmd: 'input', t: 'nudge', dx: 3, dy: -2, magnet: false });
+  const click = cleanInput({ t: 'click', button: 'left', count: 1 });
+  assert.equal(withMagnet(click, { trackpadMagnet: false }), click, 'only nudges carry it');
+  assert.ok(!('magnet' in cleanInput({ t: 'nudge', dx: 1, dy: 1, magnet: false })), 'a viewer cannot set it');
 });
 
 console.log(`${n} passed`);

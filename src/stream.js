@@ -223,8 +223,16 @@ export function scaleInput(input, { scrollSpeed = 100, pointerSpeed = 100 } = {}
 }
 let speeds = { at: 0 };                                     // read once a second, not on every touch (120 a second)
 function speedNow() {
-  if (Date.now() - speeds.at > 1000) { const s = settings(); speeds = { at: Date.now(), scrollSpeed: s.scrollSpeed, pointerSpeed: s.pointerSpeed }; }
+  if (Date.now() - speeds.at > 1000) {
+    const s = settings();
+    speeds = { at: Date.now(), scrollSpeed: s.scrollSpeed, pointerSpeed: s.pointerSpeed, trackpadMagnet: s.trackpadMagnet };
+  }
   return speeds;
+}
+// Target assistance (SeerStream's Pad: the pointer slows over buttons and drifts onto them) is on unless a nudge
+// says otherwise, so it rides on the nudges themselves and a change applies within a second.
+export function withMagnet(input, { trackpadMagnet = true } = {}) {
+  return input.t === 'nudge' && !trackpadMagnet ? { ...input, magnet: false } : input;
 }
 
 export function initStream(log) {
@@ -266,7 +274,8 @@ export async function streamUpgrade(req, socket, head, log) {
         if (input.t === 'press') ws.held.add(input.button);
         if (input.t === 'release') ws.held.delete(input.button);
         if (input.t === 'scroll' && input.phase) ws.scrolling = input.phase !== 'end';
-        toHelper(scaleInput(wheel(input), speedNow()));
+        const sp = speedNow();
+        toHelper(withMagnet(scaleInput(wheel(input), sp), sp));
       });
       ws.on('close', () => {
         // A phone that drops mid-drag would leave the Mac's button held down, or its scroll gesture open.
