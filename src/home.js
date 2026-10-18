@@ -275,7 +275,12 @@ async function refresh() {
     $('ping').innerHTML = ms + '<small> ms</small>'; $('ping').className = 'v ' + (ms < 120 ? 'green' : ms < 300 ? 'amber' : 'red');
     $('link').textContent = 'linked'; $('link-pip').className = 'pip on';
     scope(ms);
-    st = await (await fetch('/status.json', { cache: 'no-store' })).json();
+    const next = await (await fetch('/status.json', { cache: 'no-store' })).json();
+    // Just sent to sleep: the Mac answers awake for the few seconds it takes to go, so hold "Asleep". Still
+    // answering after that, it did not sleep (someone touched it, or it woke): show it as it is.
+    if (sleptAt && Date.now() - sleptAt < 15000) return;
+    if (sleptAt) { sleptAt = 0; const b = $('sleep-b'); b.disabled = false; b.lastChild.textContent = 'Sleep now'; }
+    st = next;
     render();
   } catch { $('link').textContent = 'lost'; $('link-pip').className = 'pip red'; $('ping').textContent = '—'; }
 }
@@ -293,7 +298,7 @@ $('stay-b').onclick = () => setStay(STEPS[$('stay-r').value]);
 $('stay-x').onclick = () => setStay(0);
 
 // Sleep now: a sleeping Mac cannot be woken from here, so the first tap arms it and a second within 3 s sends it.
-let armed = 0;
+let armed = 0, sleptAt = 0;
 $('sleep-b').onclick = async () => {
   const b = $('sleep-b');
   if (Date.now() > armed) {
@@ -305,6 +310,7 @@ $('sleep-b').onclick = async () => {
   try {
     const r = await fetch('/sleep', { method: 'POST' });
     if (!r.ok) throw new Error();
+    sleptAt = Date.now();
     $('eye').classList.add('asleep'); $('state').textContent = 'Asleep'; $('state').className = 'state'; $('why').textContent = 'since ' + clockOf(Date.now()); $('why').hidden = false; $('count').hidden = true;
   } catch { b.disabled = false; b.lastChild.textContent = 'Sleep now'; }
 };
@@ -365,7 +371,7 @@ show(location.hash.slice(1));
 
 render(); refresh();
 setInterval(tick, 1000);
-setInterval(() => { if (!document.hidden && !$('sleep-b').disabled) refresh(); }, 5000);
+setInterval(() => { if (!document.hidden) refresh(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 </script></body></html>`;
 }
