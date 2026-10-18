@@ -9,15 +9,16 @@ import net from 'node:net';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { HOME, loadConfig } from './store.js';
+import { settings } from './settings.js';
 
 const SUDO = '/usr/bin/sudo', PMSET = '/usr/bin/pmset', SECURITY = '/usr/bin/security';
 export const WIFI_HELPER = process.env.SEER_APP || path.join(HOME, 'bin', 'seer-wifi');
 // Inside Seer.app the helper is the app itself (`Seer wifi ...`); standalone, the seer-wifi binary.
 export const wifiArgs = args => (process.env.SEER_APP ? ['wifi', ...args] : args);
 const JOURNAL = path.join(HOME, 'awake.json');
-// % on battery. Low Power Mode at 30% stretches what is left; at 15% the Mac is let sleep, which still leaves
-// enough to open it and get back online later. Low Power Mode comes off again above 35% (or on power).
-const LOW_POWER_BELOW = 30, RELEASE_BELOW = 15, RESTORE_ABOVE = 35;
+// % on battery (Settings: lowPowerBelow, sleepBelow). Low Power Mode at 30% stretches what is left; at 15% the
+// Mac is let sleep, which still leaves enough to open it and get back online later. Low Power Mode comes off
+// again 5 points above where it went on (or on power).
 export const SUDOERS_FILE = '/etc/sudoers.d/seer';
 
 function run(file, args, { input, timeout = 15_000 } = {}) {
@@ -58,14 +59,15 @@ const pm = args => run(SUDO, ['-n', PMSET, ...args]);
 // Returns what away mode is doing.
 export async function reconcile(wantAwake, { headless = false } = {}) {
   if (!(await ruleInstalled())) return { mode: 'sleeps with the lid closed', why: 'away mode not installed (seer away install)' };
-  const j = journal(), b = await battery();
+  const j = journal(), b = await battery(), set = settings();
+  const LOW_POWER_BELOW = set.lowPowerBelow, RELEASE_BELOW = set.sleepBelow, RESTORE_ABOVE = set.lowPowerBelow + 5;
   let want = wantAwake, why = wantAwake ? 'a preview is running' : 'no preview running';
   if (want && b.onBattery && b.pct < RELEASE_BELOW) { want = false; why = `battery ${b.pct}%: letting the Mac sleep`; }
 
-  const lowPower = want && b.onBattery && (headless || b.pct < LOW_POWER_BELOW);
+  const lowPower = want && b.onBattery && ((headless && set.headlessLowPower) || b.pct < LOW_POWER_BELOW);
   if (lowPower && !j.lowPowerByUs && !(await lowPowerOn())) {
     if ((await pm(['-b', 'lowpowermode', '1'])).code === 0) j.lowPowerByUs = true;
-  } else if (j.lowPowerByUs && !lowPower && (!headless || !b.onBattery || b.pct >= RESTORE_ABOVE)) {
+  } else if (j.lowPowerByUs && !lowPower && (!headless || !set.headlessLowPower || !b.onBattery || b.pct >= RESTORE_ABOVE)) {
     if ((await pm(['-b', 'lowpowermode', '0'])).code === 0) j.lowPowerByUs = false;
   }
 
@@ -94,6 +96,7 @@ export async function savePassword(ssid, password) {
   const r = await run(SECURITY, ['add-generic-password', '-U', '-s', 'dev.seer.hotspot', '-a', ssid, '-w', password]);
   if (r.code) throw new Error(`could not save the hotspot password to the keychain: ${r.stderr.trim()}`);
 }
+export const hasPassword = async ssid => (await run(SECURITY, ['find-generic-password', '-s', 'dev.seer.hotspot', '-a', ssid])).code === 0;
 const readPassword = async ssid => {
   const r = await run(SECURITY, ['find-generic-password', '-s', 'dev.seer.hotspot', '-a', ssid, '-w']);
   return r.code ? null : r.stdout.trim();
@@ -128,7 +131,7 @@ export const netState = { downSince: null, joining: false, lastJoin: null };
 export function failover(log) {
   let downSince = null, tries = 0, nextAt = 0;
   return async function check(active) {
-    if (!active || !loadConfig().hotspotSsid) { downSince = null; netState.downSince = null; return; }
+    if (!active || !settings().hotspotFailover || !loadConfig().hotspotSsid) { downSince = null; netState.downSince = null; return; }
     if (await online()) {
       if (downSince) log(`back online after ${Math.round((Date.now() - downSince) / 1000)} s`);
       downSince = null; tries = 0; netState.downSince = null; return;

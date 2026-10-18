@@ -8,16 +8,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { HOME, loadConfig } from './store.js';
+import { HOME } from './store.js';
+import { settings } from './settings.js';
 
 const JOURNAL = path.join(HOME, 'frozen.json');
-export const DEFAULT_FREEZE = [
-  'com.google.Chrome', 'com.apple.Safari', 'com.spotify.client', 'com.tinyspeck.slackmacgap',
-  'com.hnc.Discord', 'com.figma.Desktop', 'notion.id', 'com.microsoft.teams2',
-];
 const run = (file, args) => new Promise(resolve => execFile(file, args, { timeout: 5000 }, (err, out) => resolve(err ? '' : String(out))));
 
 export function sleepDisplay() { execFile('/usr/bin/pmset', ['displaysleepnow'], () => {}); }
+
+// Sound off while headless (nobody is there to hear it), and back on after; Seer only unmutes what it muted.
+const MUTED = path.join(HOME, 'muted');
+const osa = script => run('/usr/bin/osascript', ['-e', script]);
+export async function muteOutput() {
+  if (fs.existsSync(MUTED) || (await osa('output muted of (get volume settings)')).trim() === 'true') return;
+  fs.writeFileSync(MUTED, '');
+  await osa('set volume with output muted');
+}
+export async function unmuteOutput() {
+  if (!fs.existsSync(MUTED)) return;
+  fs.unlinkSync(MUTED);
+  await osa('set volume without output muted');
+}
 
 const journal = () => { try { return JSON.parse(fs.readFileSync(JOURNAL, 'utf8')); } catch { return { frozen: [] }; } };
 const save = j => fs.writeFileSync(JOURNAL, JSON.stringify(j, null, 2) + '\n', { mode: 0o600 });
@@ -43,7 +54,7 @@ async function appTree(bundleId) {
 }
 
 export async function freezeApps(log) {
-  const j = journal(), list = loadConfig().freezeApps ?? DEFAULT_FREEZE, done = new Set(j.frozen.map(f => f.pid));
+  const j = journal(), list = settings().freezeApps, done = new Set(j.frozen.map(f => f.pid));
   let n = 0;
   for (const bundleId of list) {
     for (const pid of await appTree(bundleId)) {

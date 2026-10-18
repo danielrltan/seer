@@ -9,6 +9,7 @@ import * as core from '../src/core.js';
 import * as away from '../src/awake.js';
 import * as cloud from '../src/cloud.js';
 import { recordHook } from '../src/activity.js';
+import { installHooks } from '../src/hooks.js';
 import { uninstallAgents, installAgents } from '../src/services.js';
 import { HOME, loadConfig, saveConfig, loadPreviews } from '../src/store.js';
 
@@ -53,26 +54,6 @@ async function readHidden(prompt) {            // a typed password without echo,
   execFileSync('/bin/stty', ['-echo'], { stdio: 'inherit' });
   try { return (await new Promise(r => process.stdin.once('data', d => r(String(d))))).trim(); }
   finally { execFileSync('/bin/stty', ['echo'], { stdio: 'inherit' }); process.stdout.write('\n'); process.stdin.pause(); }
-}
-
-// Claude Code hooks that tell Seer when an agent is working: busy on each prompt, idle when it stops. Added to
-// ~/.claude/settings.json (backed up first) beside the hooks already there; run again, it changes nothing.
-function installHooks() {
-  const file = path.join(os.homedir(), '.claude', 'settings.json');
-  const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const cmd = state => `${process.execPath} ${new URL('./seer-hook.js', import.meta.url).pathname} ${state}`;
-  settings.hooks ||= {};
-  let added = 0;
-  for (const [event, state] of [['UserPromptSubmit', 'busy'], ['Notification', 'waiting'], ['Stop', 'idle']]) {
-    const list = settings.hooks[event] ||= [];
-    if (JSON.stringify(list).includes('seer-hook.js ' + state)) continue;
-    list.push({ hooks: [{ type: 'command', command: cmd(state), timeout: 5 }] });
-    added++;
-  }
-  if (!added) return 'Claude Code hooks already in place';
-  fs.copyFileSync(file, `${file}.bak-before-seer-hooks`);
-  fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
-  return `added ${added} Claude Code hook${added > 1 ? 's' : ''} (backup: ${file}.bak-before-seer-hooks)`;
 }
 
 async function awayCmd(sub, value) {

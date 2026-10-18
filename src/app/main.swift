@@ -19,7 +19,7 @@ func eyeImage(frame: Int?) -> NSImage {
         eye.move(to: NSPoint(x: 1.5, y: 8))
         eye.curve(to: NSPoint(x: 20.5, y: 8), controlPoint1: NSPoint(x: 6, y: 14.6), controlPoint2: NSPoint(x: 16, y: 14.6))
         eye.curve(to: NSPoint(x: 1.5, y: 8), controlPoint1: NSPoint(x: 16, y: 1.4), controlPoint2: NSPoint(x: 6, y: 1.4))
-        eye.lineWidth = 1.4; eye.lineJoinStyle = .round; eye.stroke()
+        eye.lineWidth = 2.6; eye.lineJoinStyle = .round; eye.stroke()
         let c = NSPoint(x: 11, y: 8)
         for i in 0..<8 {
             let a = CGFloat.pi / 2 - CGFloat(i) * .pi / 4
@@ -28,9 +28,9 @@ func eyeImage(frame: Int?) -> NSImage {
             let alpha: CGFloat = frame == nil ? 1 : (age == 0 ? 1 : 0.18 + 0.82 * CGFloat(8 - age) / 8)
             NSColor.black.withAlphaComponent(alpha).setStroke()
             let s = NSBezierPath()
-            s.move(to: NSPoint(x: c.x + 1.3 * cos(a), y: c.y + 1.3 * sin(a)))
-            s.line(to: NSPoint(x: c.x + 3.4 * cos(a), y: c.y + 3.4 * sin(a)))
-            s.lineWidth = 1.2; s.lineCapStyle = .round; s.stroke()
+            s.move(to: NSPoint(x: c.x + 1.0 * cos(a), y: c.y + 1.0 * sin(a)))
+            s.line(to: NSPoint(x: c.x + 2.6 * cos(a), y: c.y + 2.6 * sin(a)))
+            s.lineWidth = 1.1; s.lineCapStyle = .round; s.stroke()
         }
         return true
     }
@@ -65,11 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         daemon.start()
         if FileManager.default.fileExists(atPath: seerHome.appendingPathComponent("tunnel-token").path) { tunnel.start() }
 
-        // Start at login, once by default (the menu's "Launch at login" turns it off and it stays off).
-        if !UserDefaults.standard.bool(forKey: "loginItemSet") && SMAppService.mainApp.status != .enabled {
-            do { try SMAppService.mainApp.register() } catch { logLine("launch at login: \(error.localizedDescription)") }
-            UserDefaults.standard.set(true, forKey: "loginItemSet")
-        }
+        // Open at login follows the setting (on unless turned off, from Settings or this menu).
+        syncLogin()
 
         Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.poll() }
         poll()
@@ -81,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // ---- status from the Seer service ----
     private func poll() {
+        syncLogin()
         guard let url = URL(string: "http://127.0.0.1:7399/status.json") else { return }
         URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
             guard let data, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -134,17 +132,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         stay.submenu = sub; menu.addItem(stay)
 
         menu.addItem(.separator())
-        let login = NSMenuItem(title: "Launch at login", action: #selector(toggleLogin), keyEquivalent: "")
+        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","); settings.target = self; menu.addItem(settings)
+        let login = NSMenuItem(title: "Open at login", action: #selector(toggleLogin), keyEquivalent: "")
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off; login.target = self
         menu.addItem(login)
         menu.addItem(NSMenuItem(title: "Quit Seer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
-    @objc private func openHome() {
-        let cfg = (try? JSONSerialization.jsonObject(with: Data(contentsOf: seerHome.appendingPathComponent("config.json")))) as? [String: Any]
-        let zone = cfg?["zone"] as? String
-        NSWorkspace.shared.open(URL(string: zone != nil ? "https://seer.\(zone!)" : "http://127.0.0.1:7399/")!)
+    private var config: [String: Any] {
+        (try? JSONSerialization.jsonObject(with: Data(contentsOf: seerHome.appendingPathComponent("config.json")))) as? [String: Any] ?? [:]
     }
+
+    // The login item matches config.json's launchAtLogin (default on); the Settings page writes it from the phone.
+    private func syncLogin() {
+        let want = config["launchAtLogin"] as? Bool ?? true, on = SMAppService.mainApp.status == .enabled
+        guard want != on else { return }
+        do { if want { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } }
+        catch { logLine("launch at login: \(error.localizedDescription)") }
+    }
+
+    private func open(_ path: String) {
+        let zone = config["zone"] as? String
+        NSWorkspace.shared.open(URL(string: (zone != nil ? "https://seer.\(zone!)" : "http://127.0.0.1:7399") + path)!)
+    }
+    @objc private func openHome() { open("/") }
+    @objc private func openSettings() { open("/settings") }
 
     @objc private func stayAwake(_ sender: NSMenuItem) {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:7399/local/awake")!)
@@ -153,10 +165,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         URLSession.shared.dataTask(with: req) { [weak self] _, _, _ in DispatchQueue.main.async { self?.poll() } }.resume()
     }
 
+    // The menu's switch saves the setting through Seer (so the phone shows it too), then the login item follows.
     @objc private func toggleLogin() {
-        do {
-            if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() } else { try SMAppService.mainApp.register() }
-        } catch { logLine("launch at login: \(error.localizedDescription)") }
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:7399/local/settings")!)
+        req.httpMethod = "POST"; req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["launchAtLogin": SMAppService.mainApp.status != .enabled])
+        URLSession.shared.dataTask(with: req) { [weak self] _, _, _ in DispatchQueue.main.async { self?.syncLogin() } }.resume()
     }
 }
 

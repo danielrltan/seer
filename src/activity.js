@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { HOME, loadConfig } from './store.js';
+import { settings } from './settings.js';
 
 const AGENTS = path.join(HOME, 'agents');
 const STALE_MS = 6 * 3600_000;          // a "busy" mark this old is a session that died without its Stop hook
@@ -47,9 +48,10 @@ function agents() {
 
 // { awake, why, agentsBusy, agentsWaiting, reachableUntil, stayUntil }
 export function awakeReason({ pluggedIn, watching }) {
-  const cfg = loadConfig(), now = Date.now(), reachableMs = (cfg.reachableMin ?? 15) * 60_000;
+  const cfg = loadConfig(), set = settings(cfg), now = Date.now(), reachableMs = set.reachableMin * 60_000;
   if (watching) lastSeen = now;
   const a = agents();
+  if (!set.agentsKeepAwake) { a.busy = 0; a.waiting = 0; a.lastAt = 0; }       // the owner turned agents off as a reason
   if (a.busy) lastSeen = Math.max(lastSeen, now);
   const last = Math.max(lastSeen, a.lastAt), until = last + reachableMs;
   const stayUntil = cfg.stayAwakeUntil > now ? cfg.stayAwakeUntil : 0;

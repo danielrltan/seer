@@ -8,11 +8,14 @@ import { list } from './core.js';
 import { tail } from './devserver.js';
 import { cleanName, loadConfig, saveConfig } from './store.js';
 import { HOME_PORT } from './services.js';
-import { reconcile, release, failover, battery } from './awake.js';
+import { reconcile, release, failover, battery, ruleInstalled, savePassword, hasPassword } from './awake.js';
 import { awakeReason, seen } from './activity.js';
 import { macStatus, lid, sampleBattery } from './macstatus.js';
 import { homePage } from './home.js';
-import { sleepDisplay, freezeApps, thawAll, frozenCount } from './headless.js';
+import { settingsPage } from './settingspage.js';
+import { settings, applySettings, FREEZABLE } from './settings.js';
+import { hooksInstalled, installHooks } from './hooks.js';
+import { sleepDisplay, freezeApps, thawAll, frozenCount, muteOutput, unmuteOutput } from './headless.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
 import { WebSocketServer } from 'ws';
@@ -87,6 +90,12 @@ async function home() {
   return homePage(JSON.stringify(await statusJson()).replace(/</g, '\\u003c'), APP_HEAD);
 }
 
+// What the Settings page shows: the settings, the apps it can freeze, and what is installed on the Mac.
+async function settingsJson() {
+  const s = settings();
+  return { settings: s, apps: FREEZABLE, installed: { away: await ruleInstalled(), hooks: hooksInstalled(), hotspotPassword: s.hotspotSsid ? await hasPassword(s.hotspotSsid) : false } };
+}
+
 // Can this browser decode the H.264 stream Streamed mode sends (WebCodecs)? Opened once from the phone.
 function checkPage() {
   return page('Stream check', `<pre id="out">checking…</pre><script>
@@ -158,6 +167,38 @@ const server = http.createServer(async (req, res) => {
       } catch (e) { return json(500, { error: `Mac view: ${e.message}` }); }
     }
     if (url.pathname === '/desktop' && loadConfig().desktop) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(desktopPage()); }
+    // Settings: the page, what it shows, and saving. A save from the phone needs the sign-in and Seer's own
+    // origin, like stay awake; /local/settings is Seer.app's menu on this Mac (no tunnel header, no origin).
+    if (url.pathname === '/settings' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(settingsPage(JSON.stringify(await settingsJson()).replace(/</g, '\\u003c'), APP_HEAD));
+    }
+    if (url.pathname === '/settings.json') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(await settingsJson())); }
+    const fromPhone = req.method === 'POST' && ['/settings', '/settings/hooks'].includes(url.pathname);
+    const fromMenu = req.method === 'POST' && url.pathname === '/local/settings' && !req.headers['cf-connecting-ip'] && req.socket.remoteAddress === '127.0.0.1' && !req.headers.origin;
+    if (fromPhone || fromMenu) {
+      const cfg = loadConfig();
+      const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
+      if (fromPhone && (req.headers.origin !== `https://seer.${cfg.zone}` || !(await verifyAccess(req.headers['cf-access-jwt-assertion'], cfg).catch(() => null)))) return json(403, { error: 'sign in first' });
+      try {
+        if (url.pathname === '/settings/hooks') { log(`settings: ${installHooks()}`); return json(200, await settingsJson()); }
+        let body = ''; for await (const c of req) { body += c; if (body.length > 4000) throw new Error('too long'); }
+        const { hotspotPassword, ...patch } = JSON.parse(body || '{}');
+        if (fromMenu && Object.keys(patch).some(k => k !== 'launchAtLogin')) return json(403, { error: 'the menu only sets launch at login' });
+        applySettings(patch);
+        if (hotspotPassword !== undefined) {
+          const ssid = settings().hotspotSsid;
+          if (!ssid) throw new Error('set the hotspot name first');
+          if (typeof hotspotPassword !== 'string' || hotspotPassword.length < 8 || hotspotPassword.length > 63) throw new Error('a Wi-Fi password is 8 to 63 characters');
+          await savePassword(ssid, hotspotPassword);
+        }
+        log(`settings: ${[...Object.entries(patch).map(([k, v]) => `${k}=${JSON.stringify(v)}`), ...(hotspotPassword !== undefined ? ['hotspot password saved'] : [])].join(', ')}`);
+        if (patch.desktop) startStream();
+        if (patch.away === false) await release().catch(() => {});
+        tick();
+        return json(200, await settingsJson());
+      } catch (e) { return json(400, { error: e.message }); }
+    }
     // Stay awake (the slider): { minutes } from now, 0 cancels; at most 12 hours.
     if (url.pathname === '/awake' && req.method === 'POST') {
       const cfg = loadConfig();
@@ -196,7 +237,9 @@ const server = http.createServer(async (req, res) => {
 }).listen(HOME_PORT, '127.0.0.1', () => console.log(`seer home on 127.0.0.1:${HOME_PORT}`));
 // Viewer sockets, each behind the Access check in authorizeViewer: /render/ws, the Mac view of a live project
 // (render.js); /desktop/ws, the parked remote desktop, only when it is turned on (`seer desktop on`).
-if (loadConfig().desktop) initStream(msg => log(msg));
+let streamStarted = false;
+const startStream = () => { if (!streamStarted) { streamStarted = true; initStream(msg => log(msg)); } };
+if (loadConfig().desktop) startStream();
 ensureStreamAuth().then(() => log('viewer sockets: Access token check ready')).catch(e => log(`viewer sockets: ${e.message}`));
 const renderWss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 server.on('upgrade', async (req, socket, head) => {
@@ -240,11 +283,13 @@ async function tickOnce() {
   headless = running && lidState === 'closed' && !watching && !why.agentsBusy;
   // Headless actions: screen off on closing; heavy apps frozen while it waits, thawed for an agent, a viewer or
   // an open lid. Also when the Mac is about to sleep (nothing needs it) nothing stays frozen across the sleep.
-  const shut = lidState === 'closed' && !watching;
+  const set = settings(), shut = lidState === 'closed' && !watching && set.screenOff;
   if (shut && lastLid !== 'closed') sleepDisplay();
   if (shut && Date.now() - lastDark > 60_000) { sleepDisplay(); lastDark = Date.now(); }
-  if (headless && loadConfig().freezeApps !== false) await freezeApps(log).catch(e => log(`freeze: ${e.message}`));
+  if (headless && set.freeze) await freezeApps(log).catch(e => log(`freeze: ${e.message}`));
   else if (frozenCount()) await thawAll(log).catch(e => log(`thaw: ${e.message}`));
+  if (headless && set.mute) await muteOutput().catch(() => {});
+  else await unmuteOutput().catch(() => {});
   lastLid = lidState;
   if (running && !awake) {
     awake = spawn('/usr/bin/caffeinate', ['-is'], { stdio: 'ignore' });
@@ -255,14 +300,15 @@ async function tickOnce() {
   if (next.mode !== away.mode || next.why !== away.why) log(`away mode: ${next.mode} (${next.why})`);
   away = next;
   sampleBattery(b, away.mode);
-  // The Mac view's window closes two minutes after the last viewer of the stream has gone.
+  // The Mac view's window closes a while (Settings: two minutes) after the last viewer of the stream has gone.
   if (windowOpen() && viewerCount() > 0) windowSince = Date.now();
-  if (windowOpen() && viewerCount() === 0 && Date.now() - windowSince > 120_000) closeWindow(log);
+  if (windowOpen() && viewerCount() === 0 && Date.now() - windowSince > set.macViewCloseMin * 60_000) closeWindow(log);
 }
 setInterval(tick, 15_000);
 // The lid, every 3 s: closing it should turn the screen off and settle the Mac now, not at the next 15 s tick.
 setInterval(async () => { if ((await lid().catch(() => lidState)) !== lidState) tick(); }, 3_000);
 thawAll(log).catch(() => {});                                        // a crash or restart never leaves apps frozen
+unmuteOutput().catch(() => {});                                      // or the sound off
 // The network check (hotspot failover): every 5 s while the lid is closed and the Mac is in use; every 30 s when
 // headless (it only waits) or the lid is open (someone is at it).
 setInterval(() => {
@@ -270,4 +316,4 @@ setInterval(() => {
   checkNetwork(running && !!loadConfig().away).catch(e => log(`failover: ${e.message}`));
 }, 5_000);
 tick();
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { awake?.kill(); await thawAll(log).catch(() => {}); await release().catch(() => {}); process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { awake?.kill(); await thawAll(log).catch(() => {}); await unmuteOutput().catch(() => {}); await release().catch(() => {}); process.exit(0); });
