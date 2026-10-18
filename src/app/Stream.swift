@@ -2,26 +2,39 @@
 // Seer.app, so Screen Recording and Accessibility belong to the app alone, never to node or a terminal.
 //
 // It listens on ~/.seer/stream.sock (mode 600) for one client, the Seer daemon:
-//   in:  JSON lines  {"cmd":"start","maxWidth":1512,"fps":30,"bitrate":3000000} | {"cmd":"stop"} | {"cmd":"keyframe"}
+//   in:  JSON lines  {"cmd":"start","maxWidth":1512,"fps":30,"bitrate":3000000[,"virtual":true]} | {"cmd":"stop"} | {"cmd":"keyframe"}
 //                    {"cmd":"input","t":"down|up|move|scroll|text|key", ...}   x,y in 0...1 of the main display
 //                    {"cmd":"input","t":"nudge|press|release|click|scroll", ...} relative, at the cursor (Pad)
 //   out: frames      [u8 type][u32 length][payload]
 //        type 1 config: [u16 json length][json {codec,width,height}][avcC]
 //        type 2 key / 3 delta: [u64 timestamp µs][H.264 access unit, AVCC]
-//        type 4 status: json
+//        type 4 status: json ({"capturing":true,"virtual":bool,...}, {"error":...}, {"screen":"virtual screen: ..."}, ...)
 // Capture runs only between start and stop (the daemon starts it when a viewer connects), so the menu bar's
 // screen-recording indicator is not on all day.
 import AppKit
 import ApplicationServices
 import CoreMedia
 import Foundation
+import IOKit
 import ScreenCaptureKit
 import VideoToolbox
 
 let seerHome = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".seer")
 let sockPath = seerHome.appendingPathComponent("stream.sock").path
 
-func logLine(_ s: String) { FileHandle.standardError.write("\(ISO8601DateFormatter().string(from: Date())) \(s)\n".data(using: .utf8)!) }
+// Also to ~/.seer/logs/app.log: opened by LaunchServices or the login item, the app's stderr is /dev/null, and
+// everything the stream helper said was lost. Started afresh past 1 MB.
+let appLogFd: Int32 = {
+    let p = seerHome.appendingPathComponent("logs/app.log").path
+    try? FileManager.default.createDirectory(atPath: (p as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+    let big = ((try? FileManager.default.attributesOfItem(atPath: p))?[.size] as? Int ?? 0) > 1_000_000
+    return open(p, O_WRONLY | O_APPEND | O_CREAT | (big ? O_TRUNC : 0), 0o644)
+}()
+func logLine(_ s: String) {
+    let d = "\(ISO8601DateFormatter().string(from: Date())) \(s)\n".data(using: .utf8)!
+    FileHandle.standardError.write(d)
+    if appLogFd >= 0 { d.withUnsafeBytes { _ = write(appLogFd, $0.baseAddress!, d.count) } }
+}
 
 // ---------- the one client ----------
 final class Link {
@@ -147,58 +160,134 @@ final class Encoder {
 // With the lid closed and no monitor attached, macOS has no active display and there is nothing to capture. Seer
 // then adds a virtual one the size of the built-in screen (CoreGraphics' private CGVirtualDisplay, as DeskPad and
 // BetterDisplay do): the Mac lays its windows out on it and the stream shows it. It lives only in this process,
-// so it goes when Seer does; it is removed 20 s after the stream stops, and as soon as a real display is back
-// (the lid opened, a monitor plugged in). If a later macOS drops the classes, capture says there is no screen.
+// so it goes when Seer does, and as soon as a real display is back (the lid opened, a monitor plugged in): a 2 s
+// watcher runs while it exists, streamed or not. If a later macOS drops the classes, capture says there is no screen.
+//
+// While the lid stays closed it is kept between streams, not released. WindowServer keys a display by
+// vendor/product/serial and refuses a second with the same three ("already exists"), and a virtual display released
+// while the Mac is not fully awake is not removed at once: "Deferred hotplugs cannot be processed in a non-wake
+// state", and it lingers, uncapturable, until the Mac next wakes properly (seen: released 13:44, gone 16:48; every
+// create in between failed). Released early it only goes later and takes its serial with it; kept, the next stream
+// reuses it (and the windows stay where they were). With a real display active when a stream stops (forced, lid
+// open) it goes 20 s later. A refused serial is still skipped for the next of a few (few: macOS remembers each
+// serial's arrangement as a display of its own).
+//
+// Everything here runs on the main queue. Each step is logged and sent as {"screen": "..."} (the daemon logs it).
+// SEER_VIRTUAL_SCREEN=1, or "virtual": true on start (config.json stream.virtualScreen), streams the virtual screen
+// even with a real display active, for testing with the lid open; it then never hands back.
 enum VirtualScreen {
-    private static var display: AnyObject?
+    static let vendor: UInt32 = 0x5EE2
+    static let serials: [UInt32] = [1, 2, 3, 4]
+    private static var display: CGVirtualDisplay?
     private static var removal: DispatchWorkItem?
-    static var id: CGDirectDisplayID? { (display as? CGVirtualDisplay)?.displayID }
+    private static var serial: UInt32 = 1                               // the last that worked: tried first
+    static let envForced = ProcessInfo.processInfo.environment["SEER_VIRTUAL_SCREEN"] == "1"
+    static var forced = envForced
+    static var inUse = false                                           // a capture is streaming it: no timed removal
+    private static var keptNoted = false                               // "kept" said once per screen
+    static var id: CGDirectDisplayID? { display?.displayID }
 
-    static func activeDisplays() -> [CGDirectDisplayID] {
-        var n: UInt32 = 0; CGGetActiveDisplayList(0, nil, &n)
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(n)); CGGetActiveDisplayList(n, &ids, &n)
+    static func note(_ s: String) { logLine("virtual screen: \(s)"); link.status(["screen": "virtual screen: \(s)"]) }
+
+    static func activeDisplays() -> [CGDirectDisplayID] { displayList(CGGetActiveDisplayList) }
+    static func onlineDisplays() -> [CGDirectDisplayID] { displayList(CGGetOnlineDisplayList) }
+    private static func displayList(_ get: (UInt32, UnsafeMutablePointer<CGDirectDisplayID>?, UnsafeMutablePointer<UInt32>?) -> CGError) -> [CGDirectDisplayID] {
+        var n: UInt32 = 0; _ = get(0, nil, &n)
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(n)); _ = get(n, &ids, &n)
         return Array(ids.prefix(Int(n)))
     }
-    static var realDisplayActive: Bool { activeDisplays().contains { $0 != id } }
+    // Seer's by its vendor, not by the one id held here: a lingering earlier one is Seer's too, never "real".
+    static func isOurs(_ id: CGDirectDisplayID) -> Bool { CGDisplayVendorNumber(id) == vendor }
+    static var realDisplayActive: Bool { activeDisplays().contains { !isOurs($0) } }
+    // A real display connected but not active: asleep with the lid open (or closed: lidClosed tells them apart).
+    static var realDisplayOnline: Bool { onlineDisplays().contains { !isOurs($0) } }
+    // The lid, from the power manager (IOPMrootDomain's AppleClamshellState). false if it cannot be read.
+    static var lidClosed: Bool {
+        let pm = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard pm != 0 else { return false }
+        defer { IOObjectRelease(pm) }
+        return (IORegistryEntryCreateCFProperty(pm, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Bool) ?? false
+    }
 
-    // Called on the main queue. true once a virtual screen exists.
-    static func ensure() -> Bool {
+    // The virtual screen's id (new: just added), or nil if macOS would not add one (the reason is noted).
+    static func ensure() -> (id: CGDirectDisplayID, new: Bool)? {
         removal?.cancel(); removal = nil
-        if display != nil { return true }
-        guard NSClassFromString("CGVirtualDisplay") != nil else { return false }
+        if let v = display, v.displayID != 0 { note("reused (display \(v.displayID))"); return (v.displayID, false) }
+        display = nil
+        guard NSClassFromString("CGVirtualDisplay") != nil else { note("not added: this macOS has no CGVirtualDisplay"); return nil }
+        let strays = onlineDisplays().filter(isOurs)
+        if !strays.isEmpty { note("an earlier one is still there (display \(strays.map(String.init).joined(separator: ", ")), going when the Mac wakes)") }
         let main = CGDisplayBounds(CGMainDisplayID())
         let w = main.width >= 640 ? Int(main.width) : 1512, h = main.height >= 400 ? Int(main.height) : 982
-        let d = CGVirtualDisplayDescriptor()
-        d.setDispatchQueue(DispatchQueue.main)
-        d.name = "Seer"
-        d.maxPixelsWide = UInt32(w * 2); d.maxPixelsHigh = UInt32(h * 2)
-        d.sizeInMillimeters = CGSize(width: Double(w) * 0.2, height: Double(h) * 0.2)
-        d.vendorID = 0x5EE2; d.productID = 0x5EE2; d.serialNum = 1
-        d.terminationHandler = { _, _ in DispatchQueue.main.async { display = nil } }
-        let v = CGVirtualDisplay(descriptor: d)
         let s = CGVirtualDisplaySettings()
         s.hiDPI = 1
         s.modes = [CGVirtualDisplayMode(width: UInt(w), height: UInt(h), refreshRate: 60)]
-        guard v.apply(s) else { return false }
-        display = v
-        logLine("virtual screen \(w)x\(h) added (lid closed, no display)")
-        return true
+        var refused: [UInt32] = []
+        for n in [serial] + serials.filter({ $0 != serial }) {
+            let d = CGVirtualDisplayDescriptor()
+            d.setDispatchQueue(DispatchQueue.main)
+            d.name = "Seer"
+            d.maxPixelsWide = UInt32(w * 2); d.maxPixelsHigh = UInt32(h * 2)
+            d.sizeInMillimeters = CGSize(width: Double(w) * 0.2, height: Double(h) * 0.2)
+            d.vendorID = vendor; d.productID = vendor; d.serialNum = n
+            // Only for the one held now: a late word about an earlier one must not drop its successor.
+            d.terminationHandler = { _, gone in
+                DispatchQueue.main.async { if display === gone { display = nil; inUse = false; watcher?.invalidate(); watcher = nil; note("ended by macOS") } }
+            }
+            guard let v = CGVirtualDisplay(descriptor: d), v.displayID != 0 else { refused.append(n); continue }   // that serial is still taken
+            guard v.apply(s) else { note("not added: macOS refused its \(w)x\(h) mode (serial \(n))"); return nil }   // released here: removed
+            display = v; serial = n; keptNoted = false
+            watch()
+            note("added \(w)x\(h) HiDPI (display \(v.displayID), serial \(n)\(refused.isEmpty ? "" : "; serial \(refused.map(String.init).joined(separator: ", ")) still taken"))")
+            return (v.displayID, true)
+        }
+        note("not added: serials \(refused.map(String.init).joined(separator: ", ")) all still taken by earlier ones (they go when the Mac wakes)")
+        return nil
     }
-    // While streaming it: once a real display is back, drop it and stream that one instead.
+
+    // While it exists: once a real display is back, the stream moves to that one (not when forced: the real display
+    // is there all along), and one kept between streams goes. One already timed to go (forced) is left to its timer.
     private static var watcher: Timer?
     static func watch() {
-        watcher?.invalidate()
+        guard watcher == nil, display != nil else { return }
         watcher = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { t in
             guard display != nil else { t.invalidate(); watcher = nil; return }
-            if realDisplayActive { t.invalidate(); watcher = nil; Task { await capture.restart() } }
+            guard realDisplayActive else { return }
+            if inUse {
+                if !forced { t.invalidate(); watcher = nil; note("a real display is back: handing over"); capture.restart() }
+            } else if removal == nil { drop("a real display is back") }
         }
     }
-    static func remove(after seconds: Double) {
+
+    // A stream on it stopped (or never started). Lid closed, no real display: kept for the next stream, since
+    // releasing it now would only leave it lingering (see above). A real display active: gone in 20 s, unless a
+    // quick reconnect claims it (keeping the window layout).
+    static func streamEnded(_ why: String) {
+        inUse = false
+        guard display != nil else { return }
+        if realDisplayActive { remove(after: 20, why); return }
+        removal?.cancel(); removal = nil
+        if !keptNoted { keptNoted = true; note("kept for the next stream (lid closed)") }
+        watch()
+    }
+
+    static func remove(after seconds: Double, _ why: String) {
         guard display != nil else { return }
         removal?.cancel()
-        let item = DispatchWorkItem { display = nil; removal = nil; logLine("virtual screen removed") }
+        // Checked again when it is due: the lid closed in the meantime keeps it after all.
+        let item = DispatchWorkItem { removal = nil; if inUse { return }; if realDisplayActive { drop(why) } else { streamEnded(why) } }
         removal = item
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: item)
+    }
+    // Releasing it is what removes it (there is no remove call). true if there was one.
+    @discardableResult static func drop(_ why: String) -> Bool {
+        removal?.cancel(); removal = nil
+        watcher?.invalidate(); watcher = nil
+        inUse = false
+        guard let v = display else { return false }
+        display = nil; keptNoted = false
+        note("removed (display \(v.displayID); \(why))")
+        return true
     }
 }
 
@@ -211,36 +300,84 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var running = false
     private var cursorTimer: DispatchSourceTimer?
     private var lastCursor = CGPoint(x: -1, y: -1)
-    private var params: (Int, Int, Int)?
-    // Capture again as it was (the lid opened while streaming the virtual screen: the real one takes over).
-    func restart() async { if let p = params, running { await start(maxWidth: p.0, fps: p.1, bitrate: p.2) } }
+    private var params: (Int, Int, Int, Bool)?
 
-    func start(maxWidth: Int, fps: Int, bitrate: Int) async {
-        await stop()
-        do {
-            // No display at all (lid closed, no monitor): add the virtual screen and give macOS a moment to use it.
-            // A real display back: the virtual one goes.
-            let had = await MainActor.run { VirtualScreen.id != nil }
-            if !VirtualScreen.realDisplayActive {
-                let ok = await MainActor.run { VirtualScreen.ensure() }   // also keeps one that was about to go
-                if ok && !had { try? await Task.sleep(nanoseconds: 1_500_000_000) }
-            } else if had {
-                await MainActor.run { VirtualScreen.remove(after: 0) }
-                try? await Task.sleep(nanoseconds: 800_000_000)
+    // Start, stop and restart run one at a time, in the order asked. Run side by side (a viewer leaving as the next
+    // arrives), a stop's 20 s removal could be set after the next start had claimed the virtual screen, and take it
+    // away mid-stream.
+    private let opLock = NSLock()
+    private var lastOp: Task<Void, Never>?
+    func enqueue(_ op: @escaping (Capture) async -> Void) {
+        opLock.lock(); defer { opLock.unlock() }
+        let prev = lastOp
+        lastOp = Task { await prev?.value; await op(self) }
+    }
+    // Capture again as it was (the lid opened while streaming the virtual screen: the real one takes over).
+    // (Nothing running by then: the watcher goes back on, and lets a kept screen go.)
+    func restart() {
+        enqueue { c in
+            if let p = c.params, c.running { await c.start(maxWidth: p.0, fps: p.1, bitrate: p.2, virtual: p.3) }
+            else { await MainActor.run { VirtualScreen.watch() } }
+        }
+    }
+
+    // Shareable content; with a virtual screen just added, polled until macOS lists it (about half a second), up to 5 s.
+    private func shareable(waitingFor v: CGDirectDisplayID?) async throws -> SCShareableContent {
+        let until = Date().addingTimeInterval(5)
+        while true {
+            do {
+                let c = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                if v == nil || c.displays.contains(where: { $0.displayID == v }) { return c }
+                if Date() > until { await MainActor.run { VirtualScreen.note("display \(v!) not capturable after 5 s") }; return c }
+            } catch {
+                if v == nil || Date() > until || !CGPreflightScreenCaptureAccess() { throw error }
             }
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            let virt = VirtualScreen.id
-            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() && $0.displayID != virt })
-                    ?? content.displays.first(where: { $0.displayID != virt }) ?? content.displays.first else {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
+    func start(maxWidth: Int, fps: Int, bitrate: Int, virtual: Bool = false) async {
+        await stop()
+        var virt: CGDirectDisplayID?                                       // the virtual screen this start stands on
+        var started = false
+        defer {                                                            // a failed start leaves no screen behind
+            if !started && virt != nil { DispatchQueue.main.async { VirtualScreen.streamEnded("capture did not start") } }
+        }
+        do {
+            let forced = await MainActor.run { VirtualScreen.forced = VirtualScreen.envForced || virtual; return VirtualScreen.forced }
+            // A real display there but not active with the lid open is asleep (a dark wake): the daemon's caffeinate -u
+            // is waking it, so give it 2 s rather than add a screen that would hand back as soon as it woke.
+            if !forced && !VirtualScreen.realDisplayActive && !VirtualScreen.lidClosed && VirtualScreen.realDisplayOnline {
+                let until = Date().addingTimeInterval(2)
+                while !VirtualScreen.realDisplayActive && Date() < until { try? await Task.sleep(nanoseconds: 200_000_000) }
+                logLine(VirtualScreen.realDisplayActive ? "display woke: streaming it" : "display still asleep after 2 s (lid open)")
+            }
+            // No real display (lid closed, no monitor, or still asleep), or forced: the virtual screen (also keeps one
+            // about to go). A real display back: the virtual one goes, and macOS takes a moment to move the windows home.
+            let plan: (id: CGDirectDisplayID?, dropped: Bool) = await MainActor.run {
+                if forced || !VirtualScreen.realDisplayActive { return (VirtualScreen.ensure()?.id, false) }
+                return (nil, VirtualScreen.drop("a real display is active"))
+            }
+            virt = plan.id
+            if plan.dropped { try? await Task.sleep(nanoseconds: 800_000_000) }
+            let content = try await shareable(waitingFor: virt)
+            let ours = VirtualScreen.isOurs
+            guard let display = virt.flatMap({ v in content.displays.first { $0.displayID == v } })
+                    ?? content.displays.first(where: { $0.displayID == CGMainDisplayID() && !ours($0.displayID) })
+                    ?? content.displays.first(where: { !ours($0.displayID) }) ?? content.displays.first else {
                 link.status(["error": "no display to capture"]); return
             }
-            Input.screen = display.displayID
-            // The pointer may be on no live display (the lid's screen is off): bring it to the middle of this one.
+            let onVirtual = display.displayID == virt
+            await MainActor.run {
+                Input.screen = display.displayID                           // taps map onto the display streamed
+                VirtualScreen.inUse = onVirtual
+                if onVirtual { VirtualScreen.watch() }
+            }
+            // The pointer may be on no live display (the lid's screen is off, or forced): bring it to this one.
             if let p = CGEvent(source: nil)?.location, !CGDisplayBounds(display.displayID).contains(p) {
                 let b = CGDisplayBounds(display.displayID); CGWarpMouseCursorPosition(CGPoint(x: b.midX, y: b.midY))
             }
-            params = (maxWidth, fps, bitrate)
-            if display.displayID == VirtualScreen.id { await MainActor.run { VirtualScreen.watch() } }
+            params = (maxWidth, fps, bitrate, virtual)
             let scale = min(1.0, Double(maxWidth) / Double(display.width))
             let w = Int(Double(display.width) * scale) & ~1, h = Int(Double(display.height) * scale) & ~1
             guard let enc = Encoder(width: w, height: h, fps: fps, bitrate: bitrate) else { link.status(["error": "H.264 encoder unavailable"]); return }
@@ -254,8 +391,9 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
             try s.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             try await s.startCapture()
             queue.sync { encoder = enc; stream = s; running = true; watchCursor(display.displayID) }
-            link.status(["capturing": true, "width": w, "height": h])
-            logLine("capture started \(w)x\(h)")
+            started = true
+            link.status(["capturing": true, "width": w, "height": h, "virtual": onVirtual])
+            logLine("capture started \(w)x\(h) of display \(display.displayID)\(onVirtual ? " (virtual screen)" : "")")
         } catch {
             let tcc = error.localizedDescription.contains("TCC") || !CGPreflightScreenCaptureAccess()
             link.status(["error": tcc ? "screen-recording" : "capture failed: \(error.localizedDescription)"])
@@ -266,7 +404,7 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     func stop() async {
         let s: SCStream? = queue.sync { let s = stream; stream = nil; encoder = nil; lastFrame = nil; running = false; stopCursor(); return s }
         if let s { try? await s.stopCapture(); logLine("capture stopped") }
-        await MainActor.run { VirtualScreen.remove(after: 20) }   // a quick reconnect keeps it (and the window layout)
+        await MainActor.run { VirtualScreen.streamEnded("the stream stopped 20 s before") }
     }
 
     // A new viewer needs a keyframe now; a still screen sends no new frames, so the last one is encoded again.
@@ -289,8 +427,12 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         logLine("stream stopped: \(error.localizedDescription)")
-        link.status(["capturing": false, "error": error.localizedDescription])
-        queue.async { self.stream = nil; self.encoder = nil; self.running = false; self.stopCursor() }
+        queue.async {
+            guard self.stream === stream else { return }                   // one already stopped or replaced
+            self.stream = nil; self.encoder = nil; self.running = false; self.stopCursor()
+            link.status(["capturing": false, "error": error.localizedDescription])
+            DispatchQueue.main.async { VirtualScreen.streamEnded("the stream ended 20 s before") }   // no stop may follow
+        }
     }
 
     // Where the pointer is, as fractions of the captured display (the frames' space), so a zoomed-in viewer can
@@ -692,6 +834,10 @@ func serve() {
     chmod(sockPath, 0o600)
     listen(server, 4)
     logLine("listening on \(sockPath)")
+    // Quitting Seer takes the virtual screen with it (as would the process ending: WindowServer drops a dead client's).
+    NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+        VirtualScreen.drop("Seer quit")
+    }
 
     Thread.detachNewThread {
         while true {
@@ -721,15 +867,16 @@ func readLoop(_ fd: Int32) {
     link.detach(fd)
     logLine("client gone")
     Pad.queue.async { Pad.reset() }
-    Task { await capture.stop() }
+    capture.enqueue { await $0.stop() }
 }
 
 func dispatch(_ j: [String: Any]) {
     switch j["cmd"] as? String {
     case "start":
         let maxWidth = (j["maxWidth"] as? Int) ?? 1512, fps = (j["fps"] as? Int) ?? 30, bitrate = (j["bitrate"] as? Int) ?? 3_000_000
-        Task { await capture.start(maxWidth: maxWidth, fps: fps, bitrate: bitrate) }
-    case "stop": Pad.queue.async { Pad.reset() }; Task { await capture.stop() }
+        let virtual = (j["virtual"] as? Bool) ?? false                  // stream the virtual screen even with a real one (testing)
+        capture.enqueue { await $0.start(maxWidth: maxWidth, fps: fps, bitrate: bitrate, virtual: virtual) }
+    case "stop": Pad.queue.async { Pad.reset() }; capture.enqueue { await $0.stop() }
     case "keyframe": capture.keyframe()
     case "input":
         if !AXIsProcessTrusted() { link.status(["error": "accessibility"]); return }   // the service words it

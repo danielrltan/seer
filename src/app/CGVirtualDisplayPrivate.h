@@ -49,7 +49,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(readonly, nonatomic) unsigned int productID; // @synthesize productID=_productID;
 @property(readonly, nonatomic) unsigned int vendorID; // @synthesize vendorID=_vendorID;
 
-- (instancetype)initWithDescriptor:(CGVirtualDisplayDescriptor *)arg1;
+// nullable here (DeskPad's header says otherwise): when WindowServer refuses the display, Swift must not hold a nil
+// as an object. A refused display may also come back non-nil with displayID 0; Seer checks both.
+- (nullable instancetype)initWithDescriptor:(CGVirtualDisplayDescriptor *)arg1;
 - (BOOL)applySettings:(CGVirtualDisplaySettings *)arg1;
 
 @end

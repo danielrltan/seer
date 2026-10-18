@@ -50,6 +50,24 @@ export const viewerCount = () => viewers.size;
 let capturing = false, captureAsked = 0;
 export const streamingNow = () => viewers.size > 0 && (capturing || Date.now() - captureAsked < 15_000);
 let helper = null, helperBuf = Buffer.alloc(0), lastConfig = null, lastKeyAt = 0;
+// The last status logged: the same error again within 30 s is not news (one per tap otherwise). Cleared by each
+// start, so every start's outcome is logged and reaches the viewer: a second try 25 s after a failed one had shown
+// nothing at all.
+let lastStatus = { text: '', at: 0 };
+
+// What a status from SeerStream means here: its text for viewers and the log (errors in the words the phone shows),
+// whether it says capture is on (true), off (false) or neither (undefined), and whether it is only for the log.
+// {"screen": ...}: the virtual screen's comings and goings (Stream.swift, VirtualScreen), never an error.
+export function readStatus(raw) {
+  if (raw.startsWith('{"screen"')) return { text: raw, logOnly: true };
+  let text = raw, capturing;
+  if (/"capturing":true/.test(text)) capturing = true;
+  else if (/"capturing":false|"error"/.test(text)) capturing = false;
+  if (/no display to capture|Failed to find any displays/.test(text)) text = JSON.stringify({ error: 'No screen to show with the lid closed' });
+  else if (/Screen Recording|declined TCC|screen-recording/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Screen Recording settings on the Mac' });
+  else if (/"error":"accessibility"|Accessibility not allowed|needs Accessibility/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Accessibility settings on the Mac' });
+  return { text, capturing };
+}
 
 function toHelper(obj) { if (helper && !helper.destroyed) helper.write(JSON.stringify(obj) + '\n'); }
 function requestKey() { if (Date.now() - lastKeyAt > 500) { lastKeyAt = Date.now(); toHelper({ cmd: 'keyframe' }); } }
@@ -59,7 +77,6 @@ function connectHelper(log) {
   const s = net.connect(SOCK);
   helper = s;
   s.on('connect', () => { log('stream helper connected'); if (viewers.size) startCapture(); });
-  let lastStatus = { text: '', at: 0 };
   s.on('data', chunk => {
     helperBuf = Buffer.concat([helperBuf, chunk]);
     while (helperBuf.length >= 5) {
@@ -69,14 +86,12 @@ function connectHelper(log) {
       helperBuf = helperBuf.subarray(5 + len);
       const msg = Buffer.concat([frame.subarray(0, 1), frame.subarray(5)]);   // [type][payload] to the browser
       if (type === 1) lastConfig = msg;
-      if (type === 4) {                         // status; the same error again within 30 s is not news (one per tap otherwise)
-        let text = frame.subarray(5).toString();
-        if (text.startsWith('{"cursor"')) { for (const v of viewers) v.send(text); continue; }   // up to 30 a second: not logged or deduped
-        if (/"capturing":true/.test(text)) capturing = true;
-        else if (/"capturing":false|"error"/.test(text)) capturing = false;
-        if (/no display to capture|Failed to find any displays/.test(text)) text = JSON.stringify({ error: 'No screen to show with the lid closed' });
-        else if (/Screen Recording|declined TCC|screen-recording/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Screen Recording settings on the Mac' });
-        else if (/"error":"accessibility"|Accessibility not allowed|needs Accessibility/.test(text)) text = JSON.stringify({ error: 'Turn on Seer in Accessibility settings on the Mac' });
+      if (type === 4) {                         // status
+        const raw = frame.subarray(5).toString();
+        if (raw.startsWith('{"cursor"')) { for (const v of viewers) v.send(raw); continue; }   // up to 30 a second: not logged or deduped
+        const st = readStatus(raw), text = st.text;
+        if (st.logOnly) { log(`stream: ${text}`); continue; }
+        if (st.capturing !== undefined) capturing = st.capturing;
         if (/"error"/.test(text) && text === lastStatus.text && Date.now() - lastStatus.at < 30_000) continue;   // only repeated errors
         lastStatus = { text, at: Date.now() };
         log(`stream: ${text}`); for (const v of viewers) v.send(text); continue;
@@ -95,10 +110,14 @@ function connectHelper(log) {
   s.on('close', gone);
 }
 
+// config.json "stream": {"virtualScreen": true} (or SEER_VIRTUAL_SCREEN=1 for the daemon) streams Seer's virtual
+// screen even with the lid open, to test it; read on every start, so no restart is needed to turn it on or off.
 function startCapture() {
   captureAsked = Date.now();
+  lastStatus = { text: '', at: 0 };
   const { stream = {} } = loadConfig();
-  toHelper({ cmd: 'start', maxWidth: stream.maxWidth || 1512, fps: stream.fps || 30, bitrate: stream.bitrate || 3_000_000 });
+  const virtual = stream.virtualScreen === true || process.env.SEER_VIRTUAL_SCREEN === '1';
+  toHelper({ cmd: 'start', maxWidth: stream.maxWidth || 1512, fps: stream.fps || 30, bitrate: stream.bitrate || 3_000_000, ...(virtual && { virtual: true }) });
 }
 
 // The Dock button: an auto-hidden Dock only shows while the pointer sits on its edge, which a tap through a

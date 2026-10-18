@@ -5,12 +5,14 @@
 //                          (UserPromptSubmit busy, Notification waiting, Stop idle) kick Seer the moment a turn
 //                          starts and stand in for a session that has no sessions file
 //   you are watching       a desktop stream or Mac view viewer, or Seer home being opened
-//   the reachable window   with the lid closed only: reachableMin (15) minutes after the last of those, waiting
-//                          included, so the owner can answer or check from the phone. For an agent the window
-//                          starts when the last one really finished (its status went idle), not when a turn ended
-//                          with work still running; an agent stuck on a prompt no longer holds the Mac up for hours
-// Nothing else. With the lid open and none of these, Seer holds nothing and the Mac's own display and idle sleep
-// apply as if Seer were not there; someone at the keyboard is "in use", which the Mac handles itself.
+//   the reachable window   reachableMin (15) minutes after the last of those, waiting included, so the owner can
+//                          answer or check from the phone. For an agent the window starts when the last one really
+//                          finished (its status went idle), not when a turn ended with work still running; an agent
+//                          stuck on a prompt no longer holds the Mac up for hours. Lid open or closed alike: a
+//                          closed lid sleeps the Mac at once unless sleep was already disabled, before the daemon can
+//                          see it move, so the window has to be held while the lid is still open
+// Nothing else, and nothing without an end. Someone at the keyboard is "in use", which the Mac handles itself, so
+// it never feeds the window; only a Seer page opened (or, lid closed, one polled) or a viewer leaving does.
 // Nothing can wake a sleeping Mac from the phone; the window and the slider are the answer. While awake with the
 // lid closed and nobody watching or at it, the Mac is "headless" and saves all it can.
 import fs from 'node:fs';
@@ -23,7 +25,22 @@ const AGENTS = path.join(HOME, 'agents');
 const HOOK_CAP = 12 * 3600_000;         // a hook-only "busy" this old is a runaway or a session that died without Stop
 const GRACE_MS = 2 * 60_000;            // a prompt's hook can land before Claude rewrites its sessions file
 const STARTUP_MS = 10_000;              // idle since it opened: never ran, so it did not "finish"
-let lastSeen = 0, lastWorking = 0;
+// The window's two moments that live only in this daemon, kept in activity.json too so a restart (a deploy, Seer.app
+// relaunching it) does not end a window early. Written by the tick when one moved a minute or more, or when an
+// agent stops working (the moment that counts), so a restart loses under a minute and a tick rarely writes.
+const KEPT = path.join(HOME, 'activity.json');
+const kept = (() => { try { return JSON.parse(fs.readFileSync(KEPT, 'utf8')) || {}; } catch { return {}; } })();
+let lastSeen = num(kept.seenAt), lastWorking = num(kept.workedAt), savedSeen = lastSeen, savedWorking = lastWorking;
+function keep(busy) {
+  if (Math.abs(lastSeen - savedSeen) < 60_000 && (lastWorking === savedWorking || (busy && Math.abs(lastWorking - savedWorking) < 60_000))) return;
+  try {
+    fs.mkdirSync(HOME, { recursive: true });
+    fs.writeFileSync(`${KEPT}.${process.pid}.tmp`, JSON.stringify({ seenAt: lastSeen, workedAt: lastWorking }));
+    fs.renameSync(`${KEPT}.${process.pid}.tmp`, KEPT);
+    savedSeen = lastSeen; savedWorking = lastWorking;
+  } catch {}
+}
+function num(v) { return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0; }
 
 export const seen = () => { lastSeen = Date.now(); };
 
@@ -73,7 +90,7 @@ function hookMarks(now) {
 function agents(now) {
   const out = { busy: 0, waiting: 0, lastAt: 0 };
   const all = claudeSessions(now), sessions = bySession(all), marks = hookMarks(now);
-  const at = t => { out.lastAt = Math.max(out.lastAt, t || 0); };
+  const at = t => { if (t <= now + 60_000) out.lastAt = Math.max(out.lastAt, t || 0); };   // a clock set back: not hours ahead
   for (const s of all) {                                              // a file with no session id: its status alone
     if (s.sessionId || !s.live) continue;
     const { working, waiting } = sessionActivity(s, now);
@@ -102,23 +119,27 @@ function agents(now) {
 }
 
 // { awake, why, inUse, agentsBusy, agentsWaiting, reachableUntil, stayUntil }
-export function awakeReason({ watching, lidClosed, inUse }) {
+export function awakeReason({ watching, inUse }) {
   const cfg = loadConfig(), set = settings(cfg), now = Date.now(), reachableMs = set.reachableMin * 60_000;
   if (watching) lastSeen = now;
   const a = set.agentsKeepAwake ? agents(now) : { busy: 0, waiting: 0, lastAt: 0 };   // the owner can turn agents off as a reason
   if (a.busy) lastWorking = now;
+  keep(a.busy);
+  // A moment from before the clock was set back is no moment at all: it would hold the window open until then.
+  const past = t => (t <= now + 60_000 ? Math.min(t, now) : 0);
   // An agent's moment: now while one works, else when the last finished or began waiting. lastWorking covers one
   // that stopped counting without a finish time (its process died, or it hit a cap) while Seer was watching.
-  const agentAt = set.agentsKeepAwake ? Math.max(a.lastAt, lastWorking) : 0;
-  let last = Math.max(lastSeen, agentAt);
+  const agentAt = set.agentsKeepAwake ? Math.max(a.lastAt, past(lastWorking)) : 0, seenAt = past(lastSeen);
+  let last = Math.max(seenAt, agentAt);
   if (last <= (cfg.sleptAt || 0)) last = 0;                   // "Sleep now" ended the window: only newer activity counts
   const until = last + reachableMs;
-  const stayUntil = cfg.stayAwakeUntil > now ? cfg.stayAwakeUntil : 0;
+  // At most the slider's 12 hours away: further is a clock that was set back, not a stay.
+  const stayUntil = cfg.stayAwakeUntil > now && cfg.stayAwakeUntil - now <= 12 * 3600_000 ? cfg.stayAwakeUntil : 0;
   const clock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const why = stayUntil ? `until ${clock(stayUntil)}`
     : watching ? 'streaming'
     : a.busy ? `${a.busy} agent${a.busy > 1 ? 's' : ''} active`
-    : lidClosed && now < until ? (a.waiting ? 'an agent needs you' : agentAt >= lastSeen ? 'agent finished' : 'you checked in')
+    : last && now < until ? (a.waiting ? 'an agent needs you' : agentAt >= seenAt ? 'agent finished' : 'you checked in')
     : null;
-  return { awake: !!why, why: why || '', inUse: !!inUse, agentsBusy: a.busy, agentsWaiting: a.waiting, reachableUntil: lidClosed && last ? until : 0, stayUntil };
+  return { awake: !!why, why: why || '', inUse: !!inUse, agentsBusy: a.busy, agentsWaiting: a.waiting, reachableUntil: last ? until : 0, stayUntil };
 }

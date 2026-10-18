@@ -5,9 +5,9 @@
 //
 // The rules, in order:
 //   lid      'closed' means closed with no external display. A closed lid on an external display is a desk Mac
-//            (macOS keeps it up itself), so it is treated as open: no reachable window, never headless.
-//   wants    activity.js: the stay-awake timer, someone streaming, an agent working, or (lid closed only) the
-//            reachable window after the last of those.
+//            (macOS keeps it up itself), so it is treated as open: never headless.
+//   wants    activity.js: the stay-awake timer, someone streaming, an agent working, or the reachable window after
+//            the last of those, lid open or closed.
 //   held     wants, unless one of these lets it sleep:
 //              - Sleep now was tapped under a minute ago (holdOff)
 //              - on battery below sleepBelow
@@ -18,9 +18,13 @@
 //                a Seer page opened, or an agent hook after the sleep. A dark wake (Power Nap) must not turn
 //                into a night awake.
 //   held means caffeinate -is, and with away mode and the rule, sleep disabled with the lid open too, so that
-//   closing the lid on a held Mac does not sleep it before the daemon sees the lid move.
+//   closing the lid on a held Mac does not sleep it before the daemon sees the lid move. That is why the window
+//   holds with the lid open: an agent that finished, then the lid closed, must find sleep already disabled. With
+//   the lid open it only keeps macOS's idle sleep off until the window ends (windowUntil), reachableMin at most.
 //   headless held, lid closed, nobody streaming or at it, no agent working: screen off, apps frozen, sound off,
-//            Low Power Mode on battery.
+//            Low Power Mode on battery. The lid open is never headless, whatever holds it.
+//   countdown the page's "to sleep" is the closed lid's window only: with the lid open the Mac does not sleep then,
+//            it only stops being held, so there is no countdown, only windowUntil for the log and the next tick.
 // Nothing held means nothing at all: macOS's own display and idle sleep apply.
 
 export const HOLD_OFF_MS = 60_000;          // after Sleep now
@@ -49,9 +53,14 @@ export function decide(i) {
   if (hold && (i.inUse || i.watching || stay || (i.backAt || 0) > hold.at || (hold.lid === 'closed' && i.lid === 'open'))) hold = null;
 
   // A busy agent also refreshes the reachable window, so while held nothing else can be keeping it up.
-  const wants = !!why.awake && !(hold && busy), reason = why.why || '';
+  // The window alone, with the lid open, is only for a lid close to find sleep already disabled: without away mode
+  // and the rule a close sleeps it anyway, and a Mac with no lid to read (a desktop) has none to close.
+  const windowOnly = !stay && !i.watching && !busy, lidOpenUseless = i.lid !== 'closed' && !(i.lid === 'open' && canClose);
+  const wants = !!why.awake && !(hold && busy) && !(windowOnly && lidOpenUseless), reason = why.why || '';
   const running = wants && !holdingOff && !floor && !(closed && !canClose);
   const headless = running && closed && !i.watching && !i.inUse && !busy;
+  // Held by the reachable window alone (no stay, no viewer, no agent working): it lets go at reachableUntil.
+  const windowUntil = running && !stay && !i.watching && !busy && why.reachableUntil > now ? why.reachableUntil : 0;
 
   const label = running ? (headless ? 'Idling' : 'Awake') : i.inUse ? 'In use' : closed ? 'Asleep' : 'Idling';
   const sub = running ? reason : wants && floor && !holdingOff ? `battery ${b.pct}%` : '';
@@ -59,9 +68,7 @@ export function decide(i) {
   // The one countdown the page shows, so it can never disagree with when the Mac lets go.
   let countdown = null;
   if (running && stay) countdown = { until: stay, kind: 'stay' };
-  else if (running && closed && !i.watching && !busy && why.reachableUntil > now) {
-    countdown = { until: why.reachableUntil, kind: 'sleep', from: why.reachableUntil - set.reachableMin * 60_000 };
-  }
+  else if (windowUntil && closed) countdown = { until: windowUntil, kind: 'sleep', from: windowUntil - set.reachableMin * 60_000 };
 
   const disableSleep = running && canClose;
   const lowPowerTrigger = running && b.onBattery && ((headless && set.headlessLowPower) || b.pct < set.lowPowerBelow);
@@ -84,7 +91,7 @@ export function decide(i) {
     screenOff: closed && !i.watching && !i.inUse && !!set.screenOff,
     freeze: headless && !!set.freeze, mute: headless && !!set.mute,
     failover: running && closed,                                             // never switch the Wi-Fi under someone
-    sleepHold: hold, closingSleeps, notes,
+    sleepHold: hold, closingSleeps, notes, windowUntil,
   };
 }
 

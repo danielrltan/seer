@@ -9,13 +9,15 @@ import { homePage } from '../src/home.js';
 const T = 1_800_000_000_000, MIN = 60_000;
 const SET = { reachableMin: 15, screenOff: true, freeze: true, mute: true, headlessLowPower: true, lowPowerBelow: 30, sleepBelow: 15 };
 const WHY = { awake: false, why: '', agentsBusy: 0, agentsWaiting: 0, reachableUntil: 0, stayUntil: 0 };
-// What awakeReason() returns in each situation (activity.js: a busy agent or a viewer refreshes the window).
+// What awakeReason() returns in each situation (activity.js: a busy agent or a viewer refreshes the window), the
+// same whatever the lid: the window is the window, open or closed.
 const why = {
   none: WHY,
   busy: { ...WHY, awake: true, why: '1 agent active', agentsBusy: 1 },
   busyClosed: { ...WHY, awake: true, why: '1 agent active', agentsBusy: 1, reachableUntil: T + 15 * MIN },
   finished: { ...WHY, awake: true, why: 'agent finished', reachableUntil: T + 9 * MIN },
   waiting: { ...WHY, awake: true, why: 'an agent needs you', agentsWaiting: 1, reachableUntil: T + 12 * MIN },
+  checkedIn: { ...WHY, awake: true, why: 'you checked in', reachableUntil: T + 14 * MIN },
   streaming: { ...WHY, awake: true, why: 'streaming', reachableUntil: T + 15 * MIN },
   streamingOpen: { ...WHY, awake: true, why: 'streaming' },
   stay: { ...WHY, awake: true, why: 'until 2:00 AM', stayUntil: T + 40 * MIN },
@@ -58,6 +60,10 @@ function invariants(name, over, d) {
   ok(!d.screenOff || (closed && !i.watching && !i.inUse), 'screen off only behind a closed lid nobody watches');
   ok(!d.failover || (d.running && closed), 'hotspot failover only with the lid closed');
   ok(!(i.lid === 'open' && !d.running && (d.disableSleep || d.caffeinate)), 'lid open and nothing needed: hold nothing');
+  ok(!d.windowUntil || (d.running && d.windowUntil > i.now && !i.why.stayUntil && !i.watching && !busy), 'windowUntil only while the window alone holds it');
+  ok(!d.windowUntil || d.disableSleep === !!(i.away && i.rule && i.pmsetOk), 'the window keeps sleep disabled, lid open or closed, whenever it can');
+  ok(closed || !(d.countdown?.kind === 'sleep'), 'no "to sleep" countdown with the lid open: the Mac does not sleep then');
+  ok(closed || (!d.headless && !d.freeze && !d.mute && !d.screenOff && !d.failover), 'lid open: never headless, frozen, muted, dark or failing over');
 }
 
 // ---- lid open ----
@@ -77,6 +83,48 @@ check('lid open, pmset refused', { why: why.busy, pmsetOk: false },
   { running: true, disableSleep: false, notes: ['Closing the lid will sleep it: pmset could not disable sleep.'] });
 check('lid open, nothing, away off: no note', { away: false, rule: false }, { notes: [], closingSleeps: false });
 check('lid unknown (desktop Mac), agent working', { lid: 'unknown', why: why.busy }, { running: true, notes: [], closingSleeps: false, screenOff: false });
+
+// ---- lid open, the reachable window: sleep already disabled when the lid closes (the owner's report: an agent
+// finished, the lid closed, and it slept at once, before the 3 s lid poll could see it) ----
+check('THE BUG: lid open, agent finished: held, sleep disabled, nothing headless', { why: why.finished },
+  { running: true, label: 'Awake', why: 'agent finished', caffeinate: true, disableSleep: true, countdown: null, windowUntil: T + 9 * MIN,
+    headless: false, screenOff: false, freeze: false, mute: false, lowPower: false, failover: false, notes: [], closingSleeps: false });
+check('lid open, agent finished, someone at it: still armed, still Awake', { why: why.finished, inUse: true },
+  { running: true, label: 'Awake', disableSleep: true, countdown: null, windowUntil: T + 9 * MIN, headless: false });
+check('lid open, agent waiting on the owner: from when it began waiting', { why: why.waiting },
+  { running: true, label: 'Awake', why: 'an agent needs you', disableSleep: true, windowUntil: T + 12 * MIN });
+check('lid open, you checked in', { why: why.checkedIn }, { running: true, why: 'you checked in', disableSleep: true, windowUntil: T + 14 * MIN });
+check('lid open, window over: nothing', { why: why.expired }, { running: false, label: 'Idling', caffeinate: false, disableSleep: false, windowUntil: 0 });
+check('lid open, agent working: not the window', { why: why.busy }, { windowUntil: 0 });
+check('lid open, stay timer: not the window', { why: { ...why.stay, reachableUntil: T + 9 * MIN } }, { windowUntil: 0, countdown: { until: T + 40 * MIN, kind: 'stay' } });
+// The window with the lid open is only there so a close finds sleep disabled: when Seer cannot keep a closed Mac
+// up, or there is no lid, it holds nothing (no idle sleep kept off for no reason).
+check('lid open, window, away off: nothing held', { why: why.finished, away: false }, { running: false, caffeinate: false, disableSleep: false, notes: [] });
+check('lid open, window, no rule: nothing held', { why: why.finished, rule: false }, { running: false, caffeinate: false, notes: [] });
+check('lid open, window, pmset refused: nothing held', { why: why.finished, pmsetOk: false }, { running: false, caffeinate: false });
+check('lid open, agent working, away off: held, closing sleeps it, say so', { why: why.busy, away: false },
+  { running: true, disableSleep: false, closingSleeps: true, notes: ['Closing the lid will sleep it. Turn on Stay awake with the lid closed in Settings.'] });
+check('lid unknown (desktop Mac), window: nothing held', { lid: 'unknown', why: why.finished }, { running: false, caffeinate: false, disableSleep: false });
+check('closed lid on an external display, window: held', { lid: 'closed', external: true, why: why.finished }, { running: true, headless: false });
+check('lid open, window, Sleep now: nothing', { why: why.finished, holdOff: T + 30_000 },
+  { running: false, caffeinate: false, disableSleep: false, windowUntil: 0, label: 'Idling' });
+check('lid open, window, below sleepBelow: nothing, and why', { why: why.finished, ...bat(12) },
+  { running: false, disableSleep: false, why: 'battery 12%', notes: ['Battery 12%. Plug it in to keep it awake.'] });
+check('lid open, window on battery under lowPowerBelow: Low Power Mode as when working', { why: why.finished, ...bat(25) }, { running: true, lowPower: true });
+check('lid open, window on battery: not headless, so no Low Power Mode above lowPowerBelow', { why: why.finished, ...bat(80) }, { running: true, lowPower: false });
+check('after a lid-open sleep, a finish since then: the window holds', { why: why.finished, sleepHold: { at: T - MIN, lid: 'open' } },
+  { running: true, disableSleep: true, sleepHold: { at: T - MIN, lid: 'open' } });
+check('after a lid-open sleep, an agent still busy: not held until someone is back', { why: why.busy, sleepHold: { at: T - MIN, lid: 'open' } },
+  { running: false, disableSleep: false });
+check('external display, agent finished: held like an open lid', { lid: 'closed', external: true, why: why.finished },
+  { running: true, label: 'Awake', disableSleep: true, headless: false, countdown: null, windowUntil: T + 9 * MIN, screenOff: false });
+// Finished at T-6 (window to T+9) with the lid open; closed 10 minutes later; then past the window.
+const fin = { ...why.finished };
+check('finished, lid open', { why: fin }, { running: true, disableSleep: true, headless: false });
+check('…closed 10 min later: up the rest of the window, headless, counting down', { now: T + 4 * MIN, lid: 'closed', why: fin },
+  { running: true, label: 'Idling', headless: true, disableSleep: true, countdown: { until: T + 9 * MIN, kind: 'sleep', from: T - 6 * MIN } });
+check('…the window ends: let go', { now: T + 9 * MIN + 1, lid: 'closed', why: { ...WHY, reachableUntil: T + 9 * MIN } },
+  { running: false, label: 'Asleep', disableSleep: false, caffeinate: false });
 
 // ---- lid closed ----
 check('THE BUG: lid closed while an agent works: awake, no sleep countdown', { lid: 'closed', why: why.busyClosed },

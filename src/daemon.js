@@ -136,12 +136,14 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     // Someone opened a Seer page or did something: they may come back soon (the reachable window), and a Mac that
     // slept is theirs again (power.js sleepHold). The 5 s polls of an open page count for an hour after it was
-    // opened, so a forgotten tab cannot keep the Mac up all night.
+    // opened, so a forgotten tab cannot keep the Mac up all night, and only with the lid closed: with it open the
+    // page may be the Mac's own tab, which would hold off its idle sleep for that hour with nobody there.
     // A Mac in a dark wake is asleep: a page opened then is no one coming back.
+    // A visit ticks at once when nothing holds the Mac, so sleep is disabled before the lid can close on it.
     if (req.headers['cf-access-jwt-assertion'] && !(await darkWake())) {
       const poll = ['/status.json', '/ping', '/settings.json'].includes(url.pathname);
-      if (!poll && url.pathname !== '/sleep') { seen(); visitAt = backAt = Date.now(); }
-      else if (poll && Date.now() - visitAt < 3600_000) seen();
+      if (!poll && url.pathname !== '/sleep') { seen(); visitAt = backAt = Date.now(); if (!state?.running) tick(); }
+      else if (poll && Date.now() - visitAt < 3600_000 && lidState === 'closed' && !external) seen();
     }
     if (url.pathname === '/s/check-result' && req.method === 'POST') {          // what the phone reported, for Seer's log
       let body = ''; for await (const c of req) { body += c; if (body.length > 4000) break; }
@@ -303,7 +305,7 @@ server.on('upgrade', async (req, socket, head) => {
 // from sleep, the end of a countdown, or a change from the page or the menu).
 let holdOff = 0;                                       // after Sleep now: hold nothing for a minute, whatever comes in
 let caf = null, why = { awake: false, why: 'starting' }, state = null, lidState = 'unknown', external = false;
-let lastBattery = { onBattery: false, pct: 100 }, lastWatching = false, lastClosed = false, lastDark = 0, lastLine = '', lastUnread = false;
+let lastBattery = { onBattery: false, pct: 100 }, lastWatching = false, lastClosed = false, lastDark = 0, lastLine = '', lastUntil = 0, lastUnread = false;
 let windowSince = 0, netTick = 0, failures = 0, pmsetFailedAt = 0, visitAt = 0, backAt = 0, deadline = null, started = false, stopping = false;
 const log = msg => console.log(`${new Date().toISOString()} ${msg}`);
 const checkNetwork = failover(log);
@@ -332,7 +334,7 @@ async function letGo() {
 // as the Apple menu's Sleep does. The tick runs after any tick in flight, so nothing it does lands after this.
 async function sleepNow(source) {
   log(`sleep now, asked ${source}`);
-  holdOff = Date.now() + HOLD_OFF_MS;
+  holdOff = Date.now() + HOLD_OFF_MS; visitAt = 0;         // an open page's polls no longer count
   saveConfig({ stayAwakeUntil: 0, sleptAt: Date.now(), sleepHold: { at: Date.now(), lid: lidState } });
   await tick();
   await letGo();
@@ -379,7 +381,7 @@ async function tickOnce() {
   lastBattery = b;
   const inUse = idle !== null && idle < 120;            // a key, click or trackpad touch in the last 2 minutes
   const watching = watchingNow();
-  why = awakeReason({ watching, lidClosed: lidState === 'closed' && !external, inUse });
+  why = awakeReason({ watching, inUse });
   const now = Date.now();
   const d = decide({
     now, lid: lidState, external, inUse, watching, why, set, away: !!cfg.away, rule, battery: b,
@@ -409,13 +411,21 @@ async function tickOnce() {
     lastUnread = !!r.unread;
   }
 
+  // Logged on a change, with when the window lets go (so a lid test can be read against the log). A window that a
+  // polling page keeps moving is logged again only when its end moved 5 minutes or more.
   const line = `${d.label}${d.why ? ` (${d.why})` : ''}${d.disableSleep ? ', lid can close' : ''}`;
-  if (line !== lastLine) log(`power: ${line}`);
+  if (line !== lastLine || Math.abs(d.windowUntil - lastUntil) >= 5 * 60_000) {
+    const until = d.windowUntil ? ` until ${new Date(d.windowUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : '';
+    log(`power: ${line}${until}`);
+    lastUntil = d.windowUntil;
+  }
   lastLine = line;
   sampleBattery(b, d.mode);
-  // The countdown's end is a tick of its own, so the Mac lets go when the page reaches 0:00.
+  // The countdown's end is a tick of its own, so the Mac lets go when the page reaches 0:00 (or, lid open, when
+  // the window ends).
   clearTimeout(deadline);
-  if (d.countdown) deadline = setTimeout(tick, Math.max(1000, d.countdown.until - Date.now() + 500));
+  const end = d.countdown?.until || d.windowUntil;
+  if (end) deadline = setTimeout(tick, Math.max(1000, end - Date.now() + 500));
   // The Mac view's window closes a while (Settings: two minutes) after the last viewer of the stream has gone.
   if (windowOpen() && viewerCount() > 0) windowSince = Date.now();
   if (windowOpen() && viewerCount() === 0 && Date.now() - windowSince > set.macViewCloseMin * 60_000) closeWindow(log);
@@ -432,7 +442,7 @@ setInterval(async () => {
   if (slept) {
     const cfg = loadConfig();
     saveConfig(onWake({ sleptAt: slept, lid: lidState, prevSleptAt: cfg.sleptAt || 0, prevHold: cfg.sleepHold || null }));
-    lastClosed = false;                                  // screen off again if the lid is closed
+    lastClosed = false; visitAt = 0;                     // screen off again if the lid is closed; stale tabs' polls end
     log(`woke after ${Math.round((wall - slept) / 60_000)} min asleep`);
     return tick();
   }

@@ -83,8 +83,8 @@ test('all idle -> countdown from the real finish (status went idle), not the Sto
   const r = await reason();
   assert.equal(r.why, 'agent finished'); assert.equal(r.agentsBusy, 0);
   assert.equal(r.reachableUntil, done + 15 * MIN);
-  const open = await reason({ lidClosed: false });
-  assert.equal(open.awake, false); assert.equal(open.why, ''); assert.equal(open.reachableUntil, 0);
+  const open = await reason({ lidClosed: false });                    // the lid makes no difference: power.js holds it open
+  assert.equal(open.why, 'agent finished'); assert.equal(open.reachableUntil, done + 15 * MIN);
 });
 
 test('finished 20 minutes ago, lid closed -> nothing', async () => {
@@ -125,7 +125,7 @@ test('waiting on a prompt -> "an agent needs you" for the window from when it be
   let r = await reason();
   assert.equal(r.why, 'an agent needs you'); assert.equal(r.agentsWaiting, 1); assert.equal(r.agentsBusy, 0);
   assert.equal(r.reachableUntil, at + 15 * MIN);
-  assert.equal((await reason({ lidClosed: false })).awake, false);
+  assert.equal((await reason({ lidClosed: false })).why, 'an agent needs you');
   reset(); session({ pid: live(), id: sid(), status: 'waiting', since: now - 20 * MIN });
   r = await reason();
   assert.equal(r.awake, false); assert.equal(r.agentsWaiting, 1);
@@ -273,14 +273,53 @@ test('several sessions mixed: two working, one waiting, one idle, one dead', asy
   for (const x of list) assert.deepEqual(Object.keys(x).sort(), ['busy', 'dir', 'kind', 'name', 'since', 'url', 'waiting']);
 });
 
-test('lid open: the window does not apply; working still holds; inUse passes through', async () => {
+test('lid open: the window applies as closed; working still holds; inUse passes through and never feeds the window', async () => {
   reset(); const now = Date.now();
   session({ pid: live(), id: sid(), status: 'idle', since: now - MIN });
   let r = await reason({ lidClosed: false, inUse: true });
-  assert.equal(r.awake, false); assert.equal(r.inUse, true); assert.equal(r.reachableUntil, 0);
+  assert.equal(r.why, 'agent finished'); assert.equal(r.inUse, true); assert.equal(r.reachableUntil, now - MIN + 15 * MIN);
   session({ pid: live(), id: sid(), status: 'busy', since: now - MIN });
   r = await reason({ lidClosed: false });
   assert.equal(r.why, '1 agent active'); assert.equal(r.inUse, false);
+  reset(); const m = await fresh();                                    // someone typing for an hour: no window of its own
+  for (let i = 0; i < 3; i++) r = m.awakeReason({ watching: false, inUse: true });
+  assert.equal(r.awake, false); assert.equal(r.reachableUntil, 0);
+});
+
+test('a restart keeps the window: "you checked in" and a working agent that died without a finish time', async () => {
+  reset(); let m = await fresh();
+  m.seen(); m.awakeReason({ watching: false, inUse: false });
+  m = await fresh();                                                   // a new daemon: nothing in memory
+  assert.equal(m.awakeReason({ watching: false, inUse: false }).why, 'you checked in');
+  reset(); m = await fresh(); const pid = live();
+  session({ pid, id: sid(), status: 'busy', since: Date.now() - 30 * MIN });
+  assert.equal(m.awakeReason({ watching: false, inUse: false }).agentsBusy, 1);
+  process.kill(pid, 'SIGKILL');
+  await new Promise(r => setTimeout(r, 200));
+  m = await fresh();
+  const r = m.awakeReason({ watching: false, inUse: false });
+  assert.equal(r.agentsBusy, 0); assert.equal(r.why, 'agent finished');
+  near(r.reachableUntil, Date.now() + 15 * MIN, 'from the last tick it worked, before the restart');
+  const kept = () => JSON.parse(fs.readFileSync(path.join(T, 'seer', 'activity.json'), 'utf8'));
+  m.seen(); m.awakeReason({ watching: false, inUse: false });         // the first check-in is written at once
+  const before = kept();
+  near(before.seenAt, Date.now(), 'written');
+  m.seen(); m.awakeReason({ watching: false, inUse: false });         // a poll a few seconds later writes nothing
+  assert.deepEqual(kept(), before);
+});
+
+test('kept moments: Sleep now still cuts them; ones from a clock set back count for nothing', async () => {
+  const now = Date.now(), keep = v => fs.writeFileSync(path.join(T, 'seer', 'activity.json'), JSON.stringify(v));
+  reset({ sleptAt: now - 30_000 }); keep({ seenAt: now - MIN, workedAt: now - 2 * MIN });
+  assert.equal((await reason()).awake, false);
+  reset(); keep({ seenAt: now + 3 * H, workedAt: now + 3 * H });
+  let r = await reason();
+  assert.equal(r.awake, false); assert.equal(r.reachableUntil, 0);
+  reset({ stayAwakeUntil: now + 20 * H });                            // the slider goes to 12 h: this is a clock set back
+  r = await reason();
+  assert.equal(r.awake, false); assert.equal(r.stayUntil, 0);
+  reset(); session({ pid: live(), id: sid(), status: 'idle', since: now + 3 * H });
+  assert.equal((await reason()).awake, false);
 });
 
 test('the rest of the order: stay awake > streaming > working; you checked in', async () => {
