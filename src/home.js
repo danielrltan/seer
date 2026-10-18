@@ -371,7 +371,12 @@ show(location.hash.slice(1));
 
 render(); refresh();
 setInterval(tick, 1000);
-setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+// Every 5 s while the Mac is up; every 30 s while it sleeps or does not answer, so an open page never keeps
+// knocking on a sleeping Mac (a reply can only come from one of its brief background wakes). Never while hidden.
+(function poll() {
+  const asleep = sleptAt || $('link').textContent === 'lost' || (st.awake && st.awake.label === 'Sleeping');
+  setTimeout(() => { if (!document.hidden) refresh().finally(poll); else poll(); }, asleep ? 30000 : 5000);
+})();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 </script></body></html>`;
 }
