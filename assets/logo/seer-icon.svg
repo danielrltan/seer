@@ -3,6 +3,6 @@
 <radialGradient id="g"><stop offset="0" stop-color="#00e676" stop-opacity=".28"/><stop offset="1" stop-color="#00e676" stop-opacity="0"/></radialGradient></defs>
 <rect width="1024" height="1024" fill="url(#bg)"/>
 <circle cx="512" cy="512" r="270" fill="url(#g)"/>
-<path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z" fill="none" stroke="#eef3ee" stroke-width="60" stroke-linejoin="round"/>
+<path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z" fill="none" stroke="#eef3ee" stroke-width="54" stroke-linejoin="round"/>
 <g stroke="#00e676" stroke-width="34" stroke-linecap="round"><line x1="512.0" y1="460.0" x2="512.0" y2="390.0" stroke-opacity="1.00"/><line x1="548.8" y1="475.2" x2="598.3" y2="425.7" stroke-opacity="0.25"/><line x1="564.0" y1="512.0" x2="634.0" y2="512.0" stroke-opacity="0.35"/><line x1="548.8" y1="548.8" x2="598.3" y2="598.3" stroke-opacity="0.46"/><line x1="512.0" y1="564.0" x2="512.0" y2="634.0" stroke-opacity="0.57"/><line x1="475.2" y1="548.8" x2="425.7" y2="598.3" stroke-opacity="0.68"/><line x1="460.0" y1="512.0" x2="390.0" y2="512.0" stroke-opacity="0.79"/><line x1="475.2" y1="475.2" x2="425.7" y2="425.7" stroke-opacity="0.89"/></g>
 </svg>

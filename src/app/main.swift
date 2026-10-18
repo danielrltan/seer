@@ -10,27 +10,32 @@ let argv = Array(CommandLine.arguments.dropFirst())
 if argv.first == "wifi" { wifiMain(Array(argv.dropFirst())) }
 
 // ---------- the eye, drawn for the menu bar ----------
-// A template image (macOS tints it for light or dark menu bars). frame: which spoke leads (0...7); nil = still.
+// The logo itself (glass.js MARK, in its 1024-unit design space): the same eye path, the same eight spokes with
+// the same fade, scaled to the menu bar. A template image (macOS tints it for light or dark menu bars).
+// frame: which spoke leads (0...7), turning clockwise while an agent works; nil = still, as the logo rests.
 func eyeImage(frame: Int?) -> NSImage {
     let size = NSSize(width: 22, height: 16)
-    let img = NSImage(size: size, flipped: false) { rect in
-        NSColor.black.setStroke(); NSColor.black.setFill()
+    let img = NSImage(size: size, flipped: false) { _ in
+        let k: CGFloat = 15 / 586                                  // eye plus its stroke: 586 units tall -> 15 pt
+        let pt = { (x: CGFloat, y: CGFloat) in NSPoint(x: size.width / 2 + (x - 512) * k, y: size.height / 2 - (y - 512) * k) }
         let eye = NSBezierPath()
-        eye.move(to: NSPoint(x: 1.5, y: 8))
-        eye.curve(to: NSPoint(x: 20.5, y: 8), controlPoint1: NSPoint(x: 6, y: 14.6), controlPoint2: NSPoint(x: 16, y: 14.6))
-        eye.curve(to: NSPoint(x: 1.5, y: 8), controlPoint1: NSPoint(x: 16, y: 1.4), controlPoint2: NSPoint(x: 6, y: 1.4))
-        eye.lineWidth = 2.6; eye.lineJoinStyle = .round; eye.stroke()
-        let c = NSPoint(x: 11, y: 8)
+        eye.move(to: pt(150, 512))
+        eye.curve(to: pt(512, 262), controlPoint1: pt(260, 322), controlPoint2: pt(386, 262))
+        eye.curve(to: pt(874, 512), controlPoint1: pt(638, 262), controlPoint2: pt(764, 322))
+        eye.curve(to: pt(512, 762), controlPoint1: pt(764, 702), controlPoint2: pt(638, 762))
+        eye.curve(to: pt(150, 512), controlPoint1: pt(386, 762), controlPoint2: pt(260, 702))
+        eye.close()
+        NSColor.black.setStroke()
+        eye.lineWidth = 86 * k; eye.lineJoinStyle = .round; eye.stroke()
+        let lead = frame ?? 0
         for i in 0..<8 {
-            let a = CGFloat.pi / 2 - CGFloat(i) * .pi / 4
-            let lead = frame ?? 0
-            let age = (i - lead + 8) % 8                           // 0 = the leading spoke; the trail fades behind it
-            let alpha: CGFloat = frame == nil ? 1 : (age == 0 ? 1 : 0.18 + 0.82 * CGFloat(8 - age) / 8)
-            NSColor.black.withAlphaComponent(alpha).setStroke()
+            let a = -CGFloat.pi / 2 + CGFloat(i) * .pi / 4         // clockwise from the top, as in the SVG
+            let age = (lead - i + 8) % 8                           // 0 = the leading spoke; the trail fades behind it
+            NSColor.black.withAlphaComponent(age == 0 ? 1 : 0.14 + 0.86 * CGFloat(8 - age) / 8).setStroke()
             let s = NSBezierPath()
-            s.move(to: NSPoint(x: c.x + 1.0 * cos(a), y: c.y + 1.0 * sin(a)))
-            s.line(to: NSPoint(x: c.x + 2.6 * cos(a), y: c.y + 2.6 * sin(a)))
-            s.lineWidth = 1.1; s.lineCapStyle = .round; s.stroke()
+            s.move(to: pt(512 + 49 * cos(a), 512 + 49 * sin(a)))
+            s.line(to: pt(512 + 120 * cos(a), 512 + 120 * sin(a)))
+            s.lineWidth = 48 * k; s.lineCapStyle = .round; s.stroke()
         }
         return true
     }

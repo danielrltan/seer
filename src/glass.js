@@ -99,7 +99,7 @@ export const MARK = (() => {
     const [x1, y1] = p(49), [x2, y2] = p(120);
     return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-opacity="${op.toFixed(2)}"/>`;
   }).join('');
-  return `<svg width="30" height="22" viewBox="96 208 832 608" aria-hidden="true"><path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z" fill="none" stroke="#fff" stroke-width="96" stroke-linejoin="round"/><g id="pupil" stroke="var(--live)" stroke-width="48" stroke-linecap="round">${spokes}</g></svg>`;
+  return `<svg width="30" height="22" viewBox="96 208 832 608" aria-hidden="true"><path d="M150 512C260 322 386 262 512 262s252 60 362 250c-110 190-236 250-362 250S260 702 150 512Z" fill="none" stroke="#fff" stroke-width="86" stroke-linejoin="round"/><g id="pupil" stroke="var(--live)" stroke-width="48" stroke-linecap="round">${spokes}</g></svg>`;
 })();
 
 // The tunnel (frames shrinking to a vanishing point, drifting forward one ring per loop) and three glows.
