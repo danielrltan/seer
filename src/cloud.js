@@ -140,6 +140,24 @@ export async function cloudUp({ path: dirArg, name: rawName, cmd, build, port, i
 // the Access app exists before the hostname does, and a link that answers without sign-in is taken down.
 const FRONT = 'seer-front';
 const FRONT_CODE = new URL('./front/worker.js', import.meta.url);
+// The front door's routing table, rebuilt whole: every linked cloud copy, and every live link from this Mac.
+export async function syncFront() {
+  const cfg = loadConfig(), routes = {};
+  for (const x of Object.values(cfg.cloud || {})) if (x.host) routes[x.host] = { app: x.app, key: x.key };
+  for (const p of Object.values(loadPreviews())) if (p.published) routes[p.host] = { mac: true };
+  await cf.putWorker(cfg.accountId, FRONT, fs.readFileSync(FRONT_CODE, 'utf8'), { SEER_ROUTES: JSON.stringify(routes) });
+  return routes;
+}
+
+// A live link from the Mac gets the front door too (desktop view): a Worker route on its hostname, whose DNS
+// still points at the tunnel. Access was in front of it from the start.
+export async function frontMacLink(host) {
+  const cfg = loadConfig();
+  await syncFront();
+  await cf.ensureWorkerRoute(cfg.zoneId, `${host}/*`, FRONT);
+  return { link: `https://${host}`, signIn: await checkProtected(cfg, host) };
+}
+
 export async function cloudLink(rawName) {
   const name = cleanName(rawName), cfg = loadConfig(), copies = { ...(cfg.cloud || {}) }, c = copies[name];
   if (!c) throw new Error(`no cloud copy named ${name}`);
@@ -148,8 +166,7 @@ export async function cloudLink(rawName) {
   await cf.ensureAccessApp(cfg.accountId, host, cfg.policyId);
   c.host = host; c.link = `https://${host}`;
   saveConfig({ cloud: copies });
-  const routes = Object.fromEntries(Object.values(copies).filter(x => x.host).map(x => [x.host, { app: x.app, key: x.key }]));
-  await cf.putWorker(cfg.accountId, FRONT, fs.readFileSync(FRONT_CODE, 'utf8'), { SEER_ROUTES: JSON.stringify(routes) });
+  await syncFront();
   await cf.ensureWorkerDomain(cfg.accountId, cfg.zoneId, host, FRONT);
   const signIn = await checkProtected(cfg, host);
   if (signIn === 'OPEN') {

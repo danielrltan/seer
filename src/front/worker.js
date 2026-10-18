@@ -3,6 +3,7 @@
 // machine with the copy's key, which is the only way past the machine's gate. A request that did not come
 // through Access is refused here too.
 // SEER_ROUTES (a secret binding): { "<hostname>": { "app": "seer-<name>-<suffix>", "key": "<gate key>" } }
+//   or { "<hostname>": { "mac": true } }: a live link to the Mac, passed on to the hostname's own origin (the tunnel).
 //
 // Desktop view: /__seer/desktop shows the project in a 1440 px wide frame scaled to the phone, and while the
 // seer_view=desktop cookie is set the project is told it runs on a computer: a desktop User-Agent to its
@@ -24,9 +25,9 @@ export default {
     if (url.pathname === '/__seer/desktop') return desktopFrame(url.searchParams.get('path'));
     if (url.pathname === '/__seer/phone') return redirectClearing(safePath(url.searchParams.get('path')));
 
-    const target = new URL(url.pathname + url.search, `https://${route.app}.fly.dev`);
+    const target = route.mac ? new URL(request.url) : new URL(url.pathname + url.search, `https://${route.app}.fly.dev`);
     const headers = new Headers(request.headers);
-    headers.set('x-seer-key', route.key);
+    if (!route.mac) headers.set('x-seer-key', route.key);
     headers.delete('cf-access-jwt-assertion');
     if (desktop) { headers.set('user-agent', DESKTOP_UA); headers.delete('sec-ch-ua-mobile'); headers.delete('sec-ch-ua-platform'); }
     // Access's own cookie and Seer's view cookie stay at the front door; the project never sees them.

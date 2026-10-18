@@ -107,6 +107,16 @@ export async function putWorker(acc, script, code, secrets) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.success === false) throw new Error(`Cloudflare upload of Worker ${script} failed (${res.status}): ${(json.errors || []).map(e => `${e.code}: ${e.message}`).join('; ')}`);
 }
+// A Worker route: the Worker runs in front of a hostname that keeps its own DNS record (a Mac's tunnel).
+export async function ensureWorkerRoute(zoneId, pattern, script) {
+  const routes = (await cf('GET', `/zones/${zoneId}/workers/routes`)) || [];
+  if (routes.some(r => r.pattern === pattern && r.script === script)) return;
+  await cf('POST', `/zones/${zoneId}/workers/routes`, { pattern, script });
+}
+export async function removeWorkerRoute(zoneId, pattern) {
+  const routes = (await cf('GET', `/zones/${zoneId}/workers/routes`)) || [];
+  for (const r of routes) if (r.pattern === pattern) await cf('DELETE', `/zones/${zoneId}/workers/routes/${r.id}`);
+}
 // A Worker custom domain: the hostname's DNS record is made by Cloudflare and points at the Worker.
 export async function ensureWorkerDomain(acc, zoneId, hostname, script) {
   const have = (await cf('GET', `/accounts/${acc}/workers/domains?hostname=${encodeURIComponent(hostname)}`)) || [];

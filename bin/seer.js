@@ -9,7 +9,7 @@ import * as core from '../src/core.js';
 import * as away from '../src/awake.js';
 import * as cloud from '../src/cloud.js';
 import { uninstallAgents, installAgents } from '../src/services.js';
-import { HOME, loadConfig, saveConfig } from '../src/store.js';
+import { HOME, loadConfig, saveConfig, loadPreviews } from '../src/store.js';
 
 const HELP = `seer: run a build and get a private link to open it on your phone
 
@@ -108,6 +108,7 @@ try {
     case 'cloud': {
       const sub = arg, rest = positionals[2];
       if (sub === 'up') { const r = await cloud.cloudUp({ path: rest, name: o.name, cmd: o.cmd, build: o.build, idleMin: o.idle ? Number(o.idle) : undefined }); show(r, `${r.link}  (${r.app}, ${r.shippedMB} MB shipped, sign-in ${r.signIn})`); }
+      else if (sub === 'front') { const p = loadPreviews()[rest]; if (!p) throw new Error(`no live preview named ${rest}`); const r = await cloud.frontMacLink(p.host); show(r, `${r.link}  (front door on, ${r.signIn})`); }
       else if (sub === 'link') { const r = await cloud.cloudLink(rest); show(r, `${r.link}  (${r.signIn})`); }
       else if (sub === 'status') { const r = await cloud.cloudStatus(); show(r, r.map(c => `${c.name} (${c.app}): ${c.machines.map(m => `${m.state} ${m.size}`).join(', ') || 'no machines'}`).join('\n') || 'no cloud copies'); }
       else if (sub === 'stop') { const r = await cloud.cloudStopAll(); show(r, r.length ? `stopped ${r.join(', ')}` : 'nothing was running'); }
