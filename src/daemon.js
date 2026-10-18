@@ -15,6 +15,7 @@ import { homePage } from './home.js';
 import { settingsPage } from './settingspage.js';
 import { settings, applySettings, FREEZABLE } from './settings.js';
 import { hooksInstalled, installHooks } from './hooks.js';
+import { runningAgents } from './agents.js';
 import { sleepDisplay, freezeApps, thawAll, frozenCount, muteOutput, unmuteOutput } from './headless.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
@@ -83,7 +84,7 @@ async function projects() {
 }
 export async function statusJson() {
   const st = await macStatus({ awake: { awake: why.awake, label: why.awake ? (headless ? 'Headless' : 'Awake') : why.inUse ? 'In use' : lidState === 'closed' ? 'Sleeping' : 'Idle', why: why.why, inUse: !!why.inUse, mode: away.mode, stayUntil: why.stayUntil || 0, reachableUntil: why.reachableUntil || 0, headless, pluggedIn: !away.battery?.onBattery }, agentsBusy: why.agentsBusy || 0 });
-  return { ...st, projects: await projects(), desktop: !!loadConfig().desktop };
+  return { ...st, agents: runningAgents(), projects: await projects(), desktop: !!loadConfig().desktop };
 }
 
 async function home() {

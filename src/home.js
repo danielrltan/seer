@@ -44,6 +44,9 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .proj .meta{margin-top:2px;font:500 12px var(--mono);color:var(--ink3)}
 .proj .go{width:8px;height:8px;border-right:2px solid var(--ink3);border-top:2px solid var(--ink3);transform:rotate(45deg);margin-right:4px}
 .empty{font:500 13px var(--mono);color:var(--ink3);padding:16px;margin:0}
+.proj .pip.on.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 2px var(--glow);opacity:.55}}
+.proj .view{height:32px;padding:0 14px;display:inline-grid;place-items:center;font-size:13.5px;flex:none}
 /* opening a project: an iOS push. A glass sheet slides over from the right while the page under it slides a
    third of the way left and dims; the project loads behind the sheet, which stays until it arrives. */
 main{transition:transform .5s cubic-bezier(.32,.72,0,1),filter .5s}
@@ -93,6 +96,9 @@ ${BACKDROP}
   <input class="slider" type="range" id="stay-r" min="0" max="11" value="4" aria-label="How long to stay awake">
   <div class="row"><span class="k" id="stay-now"></span><span class="btns"><button class="btn" id="stay-x" hidden>Cancel</button><button class="btn tint" id="stay-b">Start</button></span></div>
 </section>
+
+<div id="agents-w" hidden><div class="sect">agents</div>
+<div class="glass list" id="agents"></div></div>
 
 <div class="sect">projects</div>
 <div class="glass list" id="projects"></div>
@@ -150,6 +156,13 @@ function render() {
   $('stay-now').textContent = a.stayUntil ? 'until ' + clockOf(a.stayUntil) : '';
   // help
   $('help').innerHTML = st.help.map(t => '<div class="glass help"><i class="dot"></i><span>' + esc(t) + '</span></div>').join('');
+  // agents: Claude Code sessions on this Mac; View opens the session's Remote Control page (the Claude app on a phone)
+  const ago = t => { const m = Math.round((Date.now() - t) / 60_000); return m < 1 ? 'now' : m < 60 ? m + ' min' : m < 2880 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'; };
+  const ag = st.agents || [];
+  $('agents-w').hidden = !ag.length;
+  $('agents').innerHTML = ag.map(g => '<div class="proj"><span class="pip ' + (g.busy ? 'on pulse' : '') + '"></span>'
+    + '<div class="main"><div class="nm">' + esc(g.name) + '</div><div class="meta">' + esc([g.busy ? 'working' : 'idle ' + ago(g.since), g.dir].filter(Boolean).join(' · ')) + '</div></div>'
+    + (g.url ? '<a class="btn view" href="' + esc(g.url) + '" target="_blank" rel="noopener">View</a>' : '') + '</div>').join('');
   // projects
   const rows = (st.desktop ? [{ name: 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
