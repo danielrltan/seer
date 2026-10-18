@@ -32,7 +32,6 @@ function trackpad() {
     SCROLL_GAIN: 1.25,  // scroll tracks the fingers 1:1 in feel; the Mac's Settings scales it
     SCROLL_DIR: -1,     // the owner's choice: the page moves against the fingers (1 = with them, as on an iPhone)
     EDGE: 30,           // 1 finger landing this close to the pad's left or right side and going up or down scrolls
-    EDGE_GAIN: 0.5,     // an edge scroll goes half as far as two fingers would (a thumb's sweep is long and quick)
     // Fingers of one gesture land 10-50 ms apart: no kind is decided this soon after a finger lands (unless the
     // movement is already large), so a two-finger scroll does not start as a cursor move.
     SETTLE: 40,
@@ -120,7 +119,7 @@ function trackpad() {
       let den = 0, nx = 0, ny = 0;
       for (const p of s) { const dt = p[0] - tm; den += dt * dt; nx += dt * (p[1] - xm); ny += dt * (p[2] - ym); }
       if (!(den > 1)) return [0, 0];       // all samples at one instant: no estimate
-      const g = C.SCROLL_GAIN * C.SCROLL_DIR * fade * (seq.edge === 'scroll' ? C.EDGE_GAIN : 1);
+      const g = C.SCROLL_GAIN * C.SCROLL_DIR * fade;
       return [seq.edge === 'scroll' ? 0 : clampV(nx / den * g), clampV(ny / den * g)];
     }
     function endScroll(v) {
@@ -218,7 +217,7 @@ function trackpad() {
       const kind = seq.kind;
       if (!kind) decide(now);
       else if (kind === 'move' || kind === 'drag') nudge(dx, dy, now - seq.lastT);
-      else if (kind === 'scroll') { if (seq.edge === 'scroll') scrollBy(0, dy * C.EDGE_GAIN); else scrollBy(dx, dy); }
+      else if (kind === 'scroll') scrollBy(seq.edge === 'scroll' ? 0 : dx, dy);
       else if (kind === 'pinch') {
         const d = spread();
         if (d > 0 && seq.dPrev > 0 && d !== seq.dPrev) { const [cx, cy] = pairCentre(); call(opts.onZoom, d / seq.dPrev, cx, cy); seq.dPrev = d; }
@@ -236,7 +235,7 @@ function trackpad() {
             seq.kind = 'scroll'; seq.edge = 'scroll';
             beginScroll();
             edgeOn = true; call(opts.onEdge, side);
-            scrollBy(0, seq.Y * C.EDGE_GAIN);
+            scrollBy(0, seq.Y);
             return;
           }
           if (seq.afterTap || seq.cont) { seq.kind = 'drag'; press(); } else seq.kind = 'move';
