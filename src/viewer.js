@@ -47,6 +47,7 @@ svg{display:block}
    Upright it is a column: the screen, the trackpad, then the key bar (while typing) and the controls. */
 #app{position:fixed;left:0;right:0;top:var(--vt,0px);height:var(--vh,100%);overflow:hidden;display:flex;flex-direction:column;gap:10px;
   padding:calc(6px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
+body.short-vp #app{padding-bottom:10px}
 #stage{position:relative;flex:none;align-self:center;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;border-radius:13px;background:#000;
   box-shadow:0 0 0 .5px rgba(255,255,255,.17),0 18px 44px rgba(0,0,0,.7)}
 #wrap{transform-origin:0 0}
@@ -279,13 +280,13 @@ function syncViewport() {
   if (!vv) return;
   const kb = vv.height < window.innerHeight * 0.8, root = document.documentElement.style;
   document.body.classList.toggle('kb-up', kb);
-  // No keyboard: the whole screen. Opened from the Home Screen, iOS can report a height short of it (by the status
-  // bar), which left a black bar under the controls; the app's screen is the phone's, so that is the floor.
+  // Opened from the Home Screen, iOS can lay the page out shorter than the screen (by the status bar's height) and
+  // paint nothing below it: a black strip across the bottom, over where the home indicator sits. Then the
+  // controls stop at the page's own bottom with a small margin, since the home indicator is in that strip.
+  const full = landscape.matches || innerWidth > innerHeight ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+  document.body.classList.toggle('short-vp', !!navigator.standalone && !kb && full - innerHeight > 20);
   let h = vv.height, top = vv.offsetTop;
-  if (!kb) {
-    const full = navigator.standalone ? (landscape.matches || innerWidth > innerHeight ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height)) : 0;
-    h = Math.max(vv.height, innerHeight, full); top = 0;
-  }
+  if (!kb) { h = Math.max(vv.height, innerHeight); top = 0; }
   root.setProperty('--vh', h + 'px');
   root.setProperty('--vt', top + 'px');
   refit();

@@ -76,6 +76,9 @@ main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
 #help:empty{display:none}
 #help .help:last-child{margin-bottom:0}
 /* the tab bar: a floating glass capsule; a lit glass pill slides under the tab that is open */
+body.short-vp main{padding-bottom:96px}
+body.short-vp #p-home.on{min-height:calc(100vh - 172px - env(safe-area-inset-top));min-height:calc(100dvh - 172px - env(safe-area-inset-top))}
+body.short-vp .tabs{bottom:12px}
 .tabs{position:fixed;z-index:6;left:0;right:0;bottom:calc(12px + env(safe-area-inset-bottom));margin:0 auto;width:min(calc(100% - 40px),340px);
   height:64px;padding:6px;border-radius:32px;display:grid;grid-template-columns:repeat(3,1fr)}
 .tabs .sel{position:absolute;left:6px;top:6px;bottom:6px;width:calc((100% - 12px) / 3);border-radius:26px;pointer-events:none;
@@ -299,6 +302,9 @@ window.addEventListener('pageshow', e => { if (e.persisted) requestAnimationFram
 
 // Tabs. The open one is kept in the address (#monitors, #agents) so back from a project lands where it was;
 // each keeps its own scroll.
+// Home Screen app laid out shorter than the screen (see viewer.js, short-vp): the tab bar sits on the page's own bottom.
+const shortVp = () => document.body.classList.toggle('short-vp', !!navigator.standalone && Math.max(screen.width, screen.height) - Math.max(innerWidth, innerHeight) > 20);
+shortVp(); addEventListener('resize', shortVp);
 const TABS = ['home', 'monitors', 'agents'], scrolls = {};
 let tab = 'home';
 function show(t) {
