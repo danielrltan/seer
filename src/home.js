@@ -2,7 +2,10 @@
 // (the Mac's screen and the projects) and Agents (Claude Code sessions). Dark Liquid Glass (glass.js).
 // Labels stay lowercase and every element carries information: no taglines, no coaching copy.
 // The page renders itself from the status JSON and refreshes every 5 s; ping is timed from the phone.
+import fs from 'node:fs';
 import { GLASS_CSS, MARK, BACKDROP, GEAR, BACK, BTN } from './glass.js';
+
+const CLAUDE_D = fs.readFileSync(new URL('../assets/agents/claude.svg', import.meta.url), 'utf8').match(/<path d="([^"]+)"/)[1];
 
 export function homePage(initial, appHead) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -65,7 +68,7 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 /* agents: each one's own mark in its tile (kind from agents.js), not tinted green like a live monitor */
 .agent .ic{color:inherit}
 .agent.live .ic{background:linear-gradient(160deg,rgba(255,255,255,.13),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 .5px rgba(255,255,255,.06),0 4px 12px rgba(0,0,0,.3)}
-.agent .ic svg.mark{width:28px;height:28px;stroke:none}
+.agent .ic svg.mark{width:24px;height:24px;stroke:none}
 main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
 /* tabs: one pane at a time, switched at once as iOS tab bars do (fading a pane in leaves its glass unblurred
    until the fade ends) */
@@ -185,10 +188,10 @@ function tick() {                                       // the clock and the cou
   }
 }
 
-// Each agent's mark, by the kind agents.js reports; one it does not know gets a plain spark.
+// Each agent's mark, by the kind agents.js reports: the agent's own logo (assets/agents, from Simple Icons, which
+// takes each from the brand's source); one it does not know gets a plain spark.
 const AGENT = {
-  claude: '<svg class="mark" viewBox="0 0 24 24"><g fill="#d97757">' + [11, 9.2, 10.4, 8.6, 11.1, 9.5, 10.2, 8.8, 10.8, 9.3, 10.5, 8.7].map((len, i) =>
-    '<rect x="10.9" y="' + (12 - len) + '" width="2.3" height="' + (len - 0.4) + '" rx="1.15" transform="rotate(' + (i * 30 + (i % 2) * 5) + ' 12 12)"/>').join('') + '</g></svg>',
+  claude: '<svg class="mark" viewBox="0 0 24 24"><path fill="#d97757" d="${CLAUDE_D}"/></svg>',
   other: '<svg viewBox="0 0 24 24"><path d="M12 4.5c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7Z"/></svg>',
 };
 
