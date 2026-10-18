@@ -12,16 +12,18 @@ ${appHead}
 <style>${GLASS_CSS}
 .hero{padding:18px 20px 20px;margin-bottom:12px;border-radius:30px}
 .hero .top{display:flex;justify-content:space-between;align-items:center}
-.state{font:700 46px/1 var(--round);letter-spacing:-.025em;margin:14px 0 6px;color:var(--ink2)}
+.state{font:750 44px/1 var(--round);letter-spacing:-.035em;margin:12px 0 5px;color:var(--ink2)}
 .state.live{color:var(--live);text-shadow:0 0 28px var(--glow)}
 .state.use{color:#fff}
 .why{font-size:15px;color:var(--ink2)}
 .count{display:flex;align-items:center;gap:12px;margin-top:16px}
-.sleep-row{display:flex;justify-content:flex-end;margin-top:16px}
+.hero .foot{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.hero .sw{min-width:0}
+.hero #sleep-b{flex:none;margin-bottom:2px}
 #sleep-b.armed{background:rgba(255,90,95,.2);color:#ffd9da;box-shadow:inset 0 1px 0 rgba(255,200,200,.25),0 0 0 .5px rgba(255,90,95,.6)}
 .count .t{font:700 20px/1 var(--round);font-variant-numeric:tabular-nums;min-width:70px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-.tile{padding:14px 16px 13px;border-radius:24px;min-height:128px;display:flex;flex-direction:column}
+.tile{padding:14px 16px 13px;border-radius:24px;min-height:104px;display:flex;flex-direction:column}
 .tile .v{font:700 30px/1.05 var(--round);letter-spacing:-.02em;margin-top:10px;font-variant-numeric:tabular-nums}
 .tile .s{font:500 12px var(--mono);color:var(--ink3);margin-top:auto;padding-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .green{color:var(--live)!important;text-shadow:0 0 18px var(--glow)}.amber{color:var(--amber)!important}.red{color:var(--red)!important}
@@ -33,6 +35,8 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .stay{padding:16px 18px 16px;border-radius:26px;margin-bottom:12px}
 .stay .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .stay .amt{font:700 24px/1 var(--round)}
+.stay .r2{margin-top:4px}.stay .r2 .slider{flex:1;margin:0}
+#stay-now{color:var(--ink2)}
 .help{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;margin-bottom:12px;border-radius:20px;font-size:14.5px}
 .help .dot{flex:none;width:8px;height:8px;margin-top:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 12px var(--amber)}
 .list{border-radius:24px;overflow:hidden}
@@ -46,14 +50,31 @@ svg.scope polyline{fill:none;stroke:var(--live);stroke-width:1.8;stroke-linejoin
 .empty{font:500 13px var(--mono);color:var(--ink3);padding:16px;margin:0}
 .proj .pip.on.pulse{animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{50%{box-shadow:0 0 2px var(--glow);opacity:.55}}
+/* Monitors: bigger rows, each with a glass icon tile for what it is: the Mac's own screen (a laptop or a
+   desktop, as the Mac is), a project served from the Mac, a cloud copy in its container (a window) */
+.mon{padding:15px 16px;gap:14px}
+.mon+.mon:before{left:76px}
+.mon .ic{position:relative;flex:none;width:46px;height:46px;border-radius:14px;display:grid;place-items:center;color:var(--ink2);
+  background:linear-gradient(160deg,rgba(255,255,255,.13),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 .5px rgba(255,255,255,.06),0 4px 12px rgba(0,0,0,.3)}
+.mon.live .ic{color:#eafff3;background:linear-gradient(160deg,rgba(43,240,138,.3),rgba(43,240,138,.08));box-shadow:inset 0 1px 0 rgba(200,255,225,.3),0 0 0 .5px rgba(43,240,138,.35),0 4px 14px rgba(43,240,138,.12)}
+.mon .ic svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.mon .ic .pip{position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border:2.5px solid #0a0f0d}
+.mon .nm{font-size:17.5px;font-weight:650}
+.mon .meta{margin-top:3px}
 .proj .view{height:32px;padding:0 14px;display:inline-grid;place-items:center;font-size:13.5px;flex:none}
 main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
-/* tabs: one pane at a time, sliding in from the side of the tab tapped */
+/* tabs: one pane at a time, switched at once as iOS tab bars do (fading a pane in leaves its glass unblurred
+   until the fade ends) */
 .pane:not(.on){display:none}
-.pane.on{animation:pane-r .38s cubic-bezier(.32,.72,0,1)}
-.pane.on.from-l{animation-name:pane-l}
-@keyframes pane-r{from{opacity:0;transform:translateX(26px)}}
-@keyframes pane-l{from{opacity:0;transform:translateX(-26px)}}
+/* Home fits the screen: the tiles take whatever height is left between the hero and stay awake, so nothing
+   scrolls; on a short phone they keep a usable size and the page scrolls instead */
+#p-home.on{display:flex;flex-direction:column;gap:12px;
+  min-height:calc(100vh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height:calc(100dvh - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+#p-home>*{flex:none;margin:0}
+#p-home .grid{flex:1 1 auto;grid-template-rows:1fr 1fr}
+#help:empty{display:none}
+#help .help:last-child{margin-bottom:0}
 /* the tab bar: a floating glass capsule; a lit glass pill slides under the tab that is open */
 .tabs{position:fixed;z-index:6;left:0;right:0;bottom:calc(12px + env(safe-area-inset-bottom));margin:0 auto;width:min(calc(100% - 40px),340px);
   height:64px;padding:6px;border-radius:32px;display:grid;grid-template-columns:repeat(3,1fr)}
@@ -68,7 +89,7 @@ main{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
 .tabs .badge{position:absolute;top:5px;left:calc(50% + 7px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;
   background:var(--live);color:#02170b;font:700 10.5px/16px var(--round);text-align:center;box-shadow:0 0 10px var(--glow)}
 .tabs .badge.amber{background:var(--amber);box-shadow:0 0 10px var(--amber)}
-@media (prefers-reduced-motion: reduce){.pane.on{animation:none}.tabs .sel{transition:none}}
+@media (prefers-reduced-motion: reduce){.tabs .sel{transition:none}}
 /* opening a project: an iOS push. A glass sheet slides over from the right while the page under it slides a
    third of the way left and dims; the project loads behind the sheet, which stays until it arrives. */
 main{transition:transform .5s cubic-bezier(.32,.72,0,1),filter .5s}
@@ -101,10 +122,8 @@ ${BACKDROP}
 <div class="pane on" id="p-home">
 <section class="glass hero">
   <div class="top"><span class="k">mac</span><span class="chip"><span class="pip" id="link-pip"></span><span id="link">linking</span></span></div>
-  <div class="state" id="state">—</div>
-  <div class="why" id="why"></div>
+  <div class="foot"><div class="sw"><div class="state" id="state">—</div><div class="why" id="why"></div></div><button class="btn" id="sleep-b">Sleep now</button></div>
   <div class="count" id="count" hidden><span class="t" id="count-t"></span><div class="track"><i id="count-i"></i></div><span class="k" id="count-k"></span></div>
-  <div class="sleep-row"><button class="btn" id="sleep-b">Sleep now</button></div>
 </section>
 
 <div id="help"></div>
@@ -117,9 +136,8 @@ ${BACKDROP}
 </div>
 
 <section class="glass stay">
-  <div class="row"><span class="k">stay awake</span><span class="amt" id="stay-amt">1 h</span></div>
-  <input class="slider" type="range" id="stay-r" min="0" max="11" value="4" aria-label="How long to stay awake">
-  <div class="row"><span class="k" id="stay-now"></span><span class="btns"><button class="btn" id="stay-x" hidden>Cancel</button><button class="btn tint" id="stay-b">Start</button></span></div>
+  <div class="row"><span class="k">stay awake <span id="stay-now"></span></span><span class="amt" id="stay-amt">1 h</span></div>
+  <div class="row r2"><input class="slider" type="range" id="stay-r" min="0" max="11" value="4" aria-label="How long to stay awake"><span class="btns"><button class="btn" id="stay-x" hidden>Cancel</button><button class="btn tint" id="stay-b">Start</button></span></div>
 </section>
 
 </div>
@@ -159,6 +177,14 @@ function tick() {                                       // the clock and the cou
     $('count-i').style.width = Math.max(2, Math.min(100, (until - now) / span * 100)) + '%';
   }
 }
+
+// What each monitor is: the Mac (a laptop has a lid; a desktop Mac reports none), a web project on it, a cloud copy.
+const ICON = {
+  laptop: '<svg viewBox="0 0 24 24"><rect x="4.5" y="5" width="15" height="10.5" rx="1.8"/><path d="M2.5 18.5h19"/></svg>',
+  desktop: '<svg viewBox="0 0 24 24"><rect x="3" y="3.8" width="18" height="12.6" rx="2.2"/><path d="M12 16.4v3.6M8.2 20h7.6"/></svg>',
+  web: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 9.5 7 12l2.5 2.5M14.5 9.5 17 12l-2.5 2.5"/></svg>',
+  window: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 8.8h18"/><circle cx="6.1" cy="6.4" r=".75" fill="currentColor" stroke="none"/><circle cx="8.6" cy="6.4" r=".75" fill="currentColor" stroke="none"/></svg>',
+};
 
 function render() {
   const a = st.awake, b = st.battery, n = st.network, h = st.hotspot;
@@ -202,8 +228,10 @@ function render() {
   const rows = (st.desktop ? [{ name: 'Desktop', href: '/desktop', state: 'streamed', where: 'screen' }] : []).concat(st.projects);
   $('projects').innerHTML = rows.length ? rows.map(p => {
     const live = p.state === 'running' || p.state === 'on demand' || p.state === 'streamed';
-    return '<a class="proj" href="' + esc(p.href) + '"><span class="pip ' + (live ? 'on' : p.state === 'failed' ? 'red' : '') + '"></span>'
-      + '<div class="main"><div class="nm">' + esc(p.name) + '</div><div class="meta">' + esc(p.where === 'cloud' ? 'cloud' : p.where === 'screen' ? 'screen' : 'mac') + (p.state === 'running' || p.state === 'streamed' ? '' : ' · ' + esc(p.state)) + '</div></div>'
+    const icon = p.where === 'screen' ? (st.lid === 'unknown' ? ICON.desktop : ICON.laptop) : p.where === 'cloud' ? ICON.window : ICON.web;
+    const meta = p.where === 'screen' ? 'screen' : [p.where === 'cloud' ? 'cloud' : 'mac', p.state === 'running' ? '' : p.state].filter(Boolean).join(' · ');
+    return '<a class="proj mon' + (live ? ' live' : '') + '" href="' + esc(p.href) + '"><span class="ic">' + icon + '<i class="pip ' + (live ? 'on' : p.state === 'failed' ? 'red' : '') + '"></i></span>'
+      + '<div class="main"><div class="nm">' + esc(p.name) + '</div><div class="meta">' + esc(meta) + '</div></div>'
       + '<span class="go"></span></a>';
   }).join('') : '<p class="empty">nothing running</p>';
   tick();
@@ -273,18 +301,12 @@ window.addEventListener('pageshow', e => { if (e.persisted) requestAnimationFram
 // each keeps its own scroll.
 const TABS = ['home', 'monitors', 'agents'], scrolls = {};
 let tab = 'home';
-function show(t, animate) {
+function show(t) {
   if (!TABS.includes(t)) t = 'home';
-  const from = TABS.indexOf(tab), to = TABS.indexOf(t);
   if (t !== tab) scrolls[tab] = scrollY;
-  for (const k of TABS) {
-    const p = $('p-' + k);
-    p.classList.toggle('on', k === t);
-    p.classList.toggle('from-l', to < from);
-    if (!animate) p.style.animation = 'none'; else p.style.animation = '';
-  }
+  for (const k of TABS) $('p-' + k).classList.toggle('on', k === t);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  $('tab-sel').style.transform = 'translateX(' + to * 100 + '%)';
+  $('tab-sel').style.transform = 'translateX(' + TABS.indexOf(t) * 100 + '%)';
   tab = t;
   history.replaceState(null, '', t === 'home' ? location.pathname + location.search : '#' + t);
   scrollTo(0, scrolls[t] || 0);
@@ -293,10 +315,9 @@ $('tabs').addEventListener('click', e => {
   const b = e.target.closest('button[data-tab]');
   if (!b) return;
   if (b.dataset.tab === tab) { scrollTo({ top: 0, behavior: 'smooth' }); return; }    // tapping the open tab scrolls up
-  show(b.dataset.tab, true);
+  show(b.dataset.tab);
 });
-show(location.hash.slice(1), false);
-requestAnimationFrame(() => requestAnimationFrame(() => { for (const k of TABS) $('p-' + k).style.animation = ''; }));
+show(location.hash.slice(1));
 
 render(); refresh();
 setInterval(tick, 1000);

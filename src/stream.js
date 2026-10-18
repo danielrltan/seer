@@ -215,11 +215,14 @@ export async function streamUpgrade(req, socket, head, log) {
   {
     req.who = await authorizeViewer(req, socket, log, 'desktop');
     if (!req.who) return;
-    // Asleep (a dark wake): say so rather than wake it. Waking the display would wake the whole Mac.
-    if (await darkWake()) return wss.handleUpgrade(req, socket, head, ws => {
-      log(`desktop viewer turned away: the Mac is asleep`);
-      ws.send(JSON.stringify({ error: 'The Mac is asleep' })); ws.close();
+    // Asleep (a dark wake: the network up, the screen off): waking the display wakes the whole Mac, a few watts
+    // against a sleeping Mac's fraction of one, so it is done only when the viewer asks (its Wake button).
+    const wake = new URL(req.url, 'http://x').searchParams.get('wake') === '1';
+    if (!wake && await darkWake()) return wss.handleUpgrade(req, socket, head, ws => {
+      log('desktop viewer: the Mac is asleep, not waking it unasked');
+      ws.send(JSON.stringify({ asleep: true })); ws.close();
     });
+    if (wake) log('desktop viewer: waking the Mac');
     wss.handleUpgrade(req, socket, head, ws => {
       log(`desktop viewer connected (${req.who}); ${viewers.size + 1} watching`);
       viewers.add(ws);

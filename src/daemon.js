@@ -18,7 +18,7 @@ import { settingsPage } from './settingspage.js';
 import { settings, applySettings, FREEZABLE } from './settings.js';
 import { hooksInstalled, installHooks } from './hooks.js';
 import { runningAgents } from './agents.js';
-import { ICON_V, ICON_HEAD, iconCache } from './icons.js';
+import { ICON_V, ICON_HEAD, iconCache, FONT_V } from './icons.js';
 import { sleepDisplay, freezeApps, thawAll, frozenCount, muteOutput, unmuteOutput } from './headless.js';
 import { initStream, streamUpgrade, authorizeViewer, cleanInput, verifyAccess, viewerCount } from './stream.js';
 import { localTarget, openSession, input as renderInput, closeSession, openWindow, closeWindow, windowOpen } from './render.js';
@@ -156,6 +156,10 @@ const server = http.createServer(async (req, res) => {
     // Icons, favicon and manifest are the only paths open without sign-in (a Cloudflare Access bypass, `seer
     // public assets`): iOS fetches a home-screen icon without the login, so behind it the icon never loaded.
     if (url.pathname === '/favicon.svg') { res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': iconCache(url) }); return res.end(fs.readFileSync(new URL('../assets/logo/seer-favicon.svg', import.meta.url))); }
+    if (url.pathname === '/font/jakarta.woff2') {
+      res.writeHead(200, { 'content-type': 'font/woff2', 'cache-control': url.searchParams.get('v') === FONT_V ? 'public, max-age=31536000, immutable' : 'public, max-age=300' });
+      return res.end(fs.readFileSync(new URL('../assets/fonts/jakarta.woff2', import.meta.url)));
+    }
     if (url.pathname === '/favicon.ico') { res.writeHead(200, { 'content-type': 'image/png', 'cache-control': iconCache(url) }); return res.end(fs.readFileSync(new URL('../assets/icon-32.png', import.meta.url))); }
     const icon = url.pathname.match(/^\/icon-(32|180|192|512)\.png$/);
     if (icon) {

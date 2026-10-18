@@ -1,14 +1,16 @@
 // The look shared by every Seer page: Apple's Liquid Glass, tinted dark. Smoked glass panels (blur and saturate
 // what is behind, a bright rim lit from the top left, an inner sheen, a soft deep shadow) float over a tunnel
 // receding into the dark and slow green glows that the glass picks up as they drift under it. iPhone Safari
-// cannot refract through a backdrop filter, so the glass is built from what it can do. SF Pro for text, SF Pro
-// Rounded for big numbers, monospace for small readouts. Dark only.
+// cannot refract through a backdrop filter, so the glass is built from what it can do. Plus Jakarta Sans for
+// text and big numbers, monospace for small readouts. Dark only.
+import { FONT_URL } from './icons.js';
 export const GLASS_CSS = `
+@font-face{font-family:'Seer Sans';src:url(${FONT_URL}) format('woff2');font-weight:200 800;font-display:swap}
 :root{
   --bg:#020403;--ink:#fff;--ink2:rgba(255,255,255,.78);--ink3:rgba(255,255,255,.5);--hair:rgba(255,255,255,.09);
   --live:#2bf08a;--glow:rgba(43,240,138,.45);--amber:#ffc44d;--red:#ff5a5f;
-  --sans:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;
-  --round:ui-rounded,'SF Pro Rounded',-apple-system,system-ui,sans-serif;
+  --sans:'Seer Sans',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  --round:'Seer Sans',ui-rounded,-apple-system,system-ui,sans-serif;
   --mono:ui-monospace,'SF Mono',Menlo,monospace;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}

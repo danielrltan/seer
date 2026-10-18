@@ -54,6 +54,10 @@ canvas{display:block}
 #pad{position:relative;flex:1 1 0;min-height:0;border-radius:26px;-webkit-backdrop-filter:none;backdrop-filter:none;touch-action:none;-webkit-user-select:none;user-select:none;
   background:${GRAIN},radial-gradient(130% 80% at 50% -20%,rgba(255,255,255,.075),transparent 60%),linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01)),rgba(14,19,17,.5);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1px 0 rgba(255,255,255,.03),inset 0 0 0 .5px rgba(255,255,255,.05),0 22px 50px rgba(0,0,0,.55)}
+/* edge scroll: a faint groove down each side of the pad, lit while a thumb scrolls along it */
+#pad .groove{position:absolute;top:22px;bottom:22px;width:3px;border-radius:2px;background:rgba(255,255,255,.07);transition:background .25s,box-shadow .25s;pointer-events:none}
+#pad .groove.l{left:9px}#pad .groove.r{right:9px}
+#pad .groove.on{background:var(--live);box-shadow:0 0 12px var(--glow)}
 #foot{flex:none;position:relative;display:flex;flex-direction:column;align-items:center;gap:10px}
 /* the controls: one glass capsule of round glass buttons */
 #bar{display:flex;align-items:center;gap:3px;padding:6px;border-radius:28px;max-width:100%}
@@ -70,6 +74,8 @@ canvas{display:block}
 #keys.open{display:flex}
 .key{flex:1;min-width:0;height:40px;border-radius:15px;display:grid;place-items:center;color:var(--ink2);font:600 14px var(--round);
   background:rgba(255,255,255,.07);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+#wake{position:absolute;z-index:3;left:50%;top:50%;transform:translate(-50%,-50%);height:44px;padding:0 26px;font-size:16px}
+#wake:active{transform:translate(-50%,-50%) scale(.97)}
 /* status, on the screen while it is not live (connecting, reconnecting, copied, errors) */
 #msg{position:absolute;z-index:2;top:12px;left:50%;transform:translateX(-50%);max-width:calc(100% - 24px);height:30px;padding:0 14px;border-radius:15px;
   font:600 13px/30px var(--sans);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
@@ -113,8 +119,8 @@ canvas{display:block}
 }
 </style></head><body>
 <div id="app">
-<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="msg" class="glass">Connecting</div></div>
-<div id="pad" class="glass"></div>
+<div id="stage"><div id="wrap"><canvas id="screen" width="16" height="10"></canvas></div><div id="msg" class="glass">Connecting</div><button class="btn tint" id="wake" hidden>Wake</button></div>
+<div id="pad" class="glass"><i class="groove l" id="groove-l"></i><i class="groove r" id="groove-r"></i></div>
 <div id="foot">
 <div id="keys" class="glass">${KEYS.map(([k, l]) => `<button class="key" data-key="${k}" aria-label="${k}">${l}</button>`).join('')}</div>
 <div id="bar" class="glass">
@@ -181,23 +187,29 @@ document.addEventListener('touchend', () => {
   }).catch(() => { pendingClip = text; });
 }, true);
 
+// Asleep: the Mac answered from a dark wake (asleep, screen off). It is not woken unless asked: Wake does it.
+let wakeAsked = false, retry = 0;
 function connect() {
-  status('Connecting', '');
-  asleep = false;
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ${JSON.stringify(wsPath)} + location.search);
+  clearTimeout(retry);
+  if (!asleep) status('Connecting', '');
+  const q = new URLSearchParams(location.search);
+  if (wakeAsked) q.set('wake', '1');
+  wakeAsked = false;
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + ${JSON.stringify(wsPath)} + (String(q) ? '?' + q : ''));
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => status('Connecting', '');
+  ws.onopen = () => { if (!asleep) status('Connecting', ''); };
   ws.onmessage = ev => {
     if (typeof ev.data === 'string') {
       const m = JSON.parse(ev.data);
+      if (m.asleep) { asleep = true; status('Asleep', 'fail'); $('wake').hidden = false; return; }
       if (m.error) status(m.error, 'fail');
-      asleep = m.error === 'The Mac is asleep';
       if ('dock' in m && $('dock')) $('dock').classList.toggle('on', m.dock);
       if ('textFocus' in m) textFocus(m.textFocus);
       if (typeof m.clip === 'string') pendingClip = m.clip;
       if (m.cursor && typeof m.cursor.x === 'number' && typeof m.cursor.y === 'number') { cursor = m.cursor; followPointer(); }   // the Mac's pointer, as fractions of its screen
       return;
     }
+    if (asleep) { asleep = false; $('wake').hidden = true; }
     const buf = new Uint8Array(ev.data), type = buf[0];
     if (type === 5) {                        // a whole JPEG frame (the Mac view): draw the newest, skip any that queue behind
       if (drawing) { pendingJpeg = buf; return; }
@@ -218,9 +230,14 @@ function connect() {
     decoder.decode(new EncodedVideoChunk({ type: type === 2 ? 'key' : 'delta', timestamp: ts, data: buf.subarray(9) }));
     if ($('dot').className !== 'live') status('Live', 'live');
   };
-  // Asleep: keep saying so, and look again now and then (it is back once someone wakes it).
-  ws.onclose = () => { if (!asleep) status('Reconnecting', 'fail'); configured = false; setTimeout(connect, asleep ? 20000 : 1500); };
+  // Asleep: keep saying so (and offer Wake again if waking it failed), and look again now and then.
+  ws.onclose = () => {
+    configured = false;
+    if (asleep) { status('Asleep', 'fail'); $('wake').hidden = false; } else status('Reconnecting', 'fail');
+    retry = setTimeout(connect, asleep ? 20000 : 1500);
+  };
 }
+$('wake').onclick = () => { wakeAsked = true; $('wake').hidden = true; status('Waking', ''); if (ws) { ws.onclose = null; try { ws.close(); } catch {} } connect(); };
 
 // ---------- view: fit, zoom and pan (local only) ----------
 let zoom = 1, panX = 0, panY = 0;
@@ -260,9 +277,17 @@ window.addEventListener('orientationchange', refit);
 function syncViewport() {
   const vv = window.visualViewport;
   if (!vv) return;
-  document.documentElement.style.setProperty('--vh', vv.height + 'px');
-  document.documentElement.style.setProperty('--vt', vv.offsetTop + 'px');
-  document.body.classList.toggle('kb-up', vv.height < window.innerHeight * 0.8);
+  const kb = vv.height < window.innerHeight * 0.8, root = document.documentElement.style;
+  document.body.classList.toggle('kb-up', kb);
+  // No keyboard: the whole screen. Opened from the Home Screen, iOS can report a height short of it (by the status
+  // bar), which left a black bar under the controls; the app's screen is the phone's, so that is the floor.
+  let h = vv.height, top = vv.offsetTop;
+  if (!kb) {
+    const full = navigator.standalone ? (landscape.matches || innerWidth > innerHeight ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height)) : 0;
+    h = Math.max(vv.height, innerHeight, full); top = 0;
+  }
+  root.setProperty('--vh', h + 'px');
+  root.setProperty('--vt', top + 'px');
   refit();
 }
 if (window.visualViewport) { visualViewport.addEventListener('resize', syncViewport); visualViewport.addEventListener('scroll', syncViewport); syncViewport(); }
@@ -445,6 +470,7 @@ if (window.mountTrackpad) window.mountTrackpad(pad, {
     zoomAt(zoom * factor, pinchAt.px, pinchAt.py);
   },
   onZoomEnd() { pinchAt = null; if (zoom < 1.06) { zoom = 1; applyView(); } },
+  onEdge(side) { $('groove-l').classList.toggle('on', side === 'left'); $('groove-r').classList.toggle('on', side === 'right'); },
 });
 // A click on the pad may land in a Mac text field: get the keyboard ready inside the touch (see keyboard, below).
 pad.addEventListener('touchend', () => primeKeyboard(), true);

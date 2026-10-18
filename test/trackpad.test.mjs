@@ -266,18 +266,18 @@ await test('two-finger flick -> begin, moves, end with release velocity; no curs
   const m = await msgs(), k = kinds(m), end = m[m.length - 1];
   eq(k[0], 'scroll:begin', 'begin first'); eq(k[k.length - 1], 'scroll:end', 'end last');
   ok(k.slice(1, -1).length >= 3 && k.slice(1, -1).every(x => x === 'scroll:move'), 'moves between');
-  near(sum(m, 'dy', 'scroll'), -150 * 1.25, 4, 'tracks the fingers 1:1.25, finger direction');
+  near(sum(m, 'dy', 'scroll'), 150 * 1.25, 4, 'tracks the fingers 1:1.25, against them');
   near(sum(m, 'dx', 'scroll'), 0, 0.5, 'no sideways');
   console.log(`       flick end v = (${end.vx}, ${end.vy}) pt/ms`);
-  near(end.vy, -150 / 128 * 1.25, 0.3, 'release velocity ~ finger speed'); near(end.vx, 0, 0.1, 'no sideways velocity');
+  near(end.vy, 150 / 128 * 1.25, 0.3, 'release velocity ~ finger speed'); near(end.vx, 0, 0.1, 'no sideways velocity');
   return m;
 });
 
 await test('120 Hz flick -> the same scroll and velocity', async () => {
   await two(); await slide(0, -150, 128, { hz: 120 }); await up();
   const m = await msgs(), end = m[m.length - 1];
-  near(sum(m, 'dy', 'scroll'), -150 * 1.25, 4, 'travel'); console.log(`       120 Hz flick end v = (${end.vx}, ${end.vy}) pt/ms`);
-  ok(end.vy < -1, 'flick velocity'); return m;
+  near(sum(m, 'dy', 'scroll'), 150 * 1.25, 4, 'travel'); console.log(`       120 Hz flick end v = (${end.vx}, ${end.vy}) pt/ms`);
+  ok(end.vy > 1, 'flick velocity'); return m;
 });
 
 await test('scroll, pause, lift -> end with zero velocity', async () => {
@@ -290,7 +290,7 @@ await test('scroll is not accelerated: slow and fast travel the same', async () 
   const slow = sum(await evaluate('__msgs'), 'dy', 'scroll'); await evaluate('__msgs.length = 0');
   await two(150, 300); await slide(0, 100, 64); await up();
   const m = await msgs(), fast = sum(m, 'dy', 'scroll');
-  near(slow, 125, 3, 'slow'); near(fast, 125, 3, 'fast'); return [];
+  near(slow, -125, 3, 'slow'); near(fast, -125, 3, 'fast'); return [];
 });
 
 await test('staggered landing (second finger 25 ms late, first drifting) still scrolls, no cursor', async () => {
@@ -392,6 +392,30 @@ await test('destroy mid-drag releases; nothing after destroy', async () => {
 await test('destroy mid-scroll ends the scroll', async () => {
   await two(); await slide(0, -80, 100); await evaluate('__tp.destroy()'); await up();
   const m = await msgs(), k = kinds(m); eq(k[k.length - 1], 'scroll:end', 'ended'); return m;
+});
+
+// ---------- edge scroll ----------
+await test('one finger up the right edge -> scroll (vertical only), no cursor', async () => {
+  await down([1, PAD.left + 350 - 12, 600]); await slide(4, -150, 128); await up();
+  const m = await msgs(), k = kinds(m);
+  ok(!k.includes('nudge'), 'no nudge'); eq(k[0], 'scroll:begin', 'begin'); eq(k[k.length - 1], 'scroll:end', 'end');
+  near(sum(m, 'dy', 'scroll'), 150 * 1.25, 4, 'against the finger'); near(sum(m, 'dx', 'scroll'), 0, 0.01, 'no sideways');
+  ok(m[m.length - 1].vy > 1, 'glides'); eq(m[m.length - 1].vx, 0, 'no sideways glide'); return m;
+});
+await test('one finger down the left edge -> scroll', async () => {
+  await down([1, PAD.left + 10, 300]); await slide(0, 120, 200); await up();
+  const m = await msgs(); ok(!kinds(m).includes('nudge'), 'no nudge'); near(sum(m, 'dy', 'scroll'), -120 * 1.25, 4, 'scrolled'); return m;
+});
+await test('from the edge sideways -> cursor, not scroll', async () => {
+  await down([1, PAD.left + 10, 400]); await slide(120, 10, 200); await up();
+  const m = await msgs(), k = kinds(m); ok(!k.some(x => x.startsWith('scroll')), 'no scroll'); ok(sum(m, 'dx') > 100, 'cursor moved'); return m;
+});
+await test('tap on the edge -> click', async () => {
+  await tap(PAD.left + 8, 400); const m = await msgs(); eq(strip(m), [{ t: 'click', button: 'left', count: 1 }], 'click'); return m;
+});
+await test('one finger up the middle -> cursor, not scroll', async () => {
+  await down([1, PAD.left + 175, 600]); await slide(0, -150, 200); await up();
+  const m = await msgs(), k = kinds(m); ok(!k.some(x => x.startsWith('scroll')), 'no scroll'); ok(sum(m, 'dy') < -100, 'cursor moved up'); return m;
 });
 
 // ---------- mouse ----------

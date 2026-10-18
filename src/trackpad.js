@@ -6,16 +6,17 @@
 //     {t:'nudge', dx, dy}                       cursor move, Mac points, accelerated here (at most one per frame)
 //     {t:'press'|'release', button}             hold / let go of a button (tap-to-drag)
 //     {t:'click', button, count}                count 2/3 for quick taps in a row
-//     {t:'scroll', dx, dy, phase, vx, vy}       two-finger scroll in finger direction, Mac points, no acceleration;
+//     {t:'scroll', dx, dy, phase, vx, vy}       two-finger or edge scroll, against the fingers (SCROLL_DIR), Mac points, no acceleration;
 //                                               phase begin|move|end, vx/vy (points/ms) only on end: the Mac glides
 //     {t:'key', key, mods}                      gesture shortcuts (three-finger swipes and tap)
 //   onZoom(factor, cx, cy)   a pinch on the pad: zoom the view by factor (relative to the last call) around cx, cy
 //                            (pad CSS px)
 //   onZoomEnd()              the pinch ended
+//   onEdge(side)             an edge scroll began ('left' or 'right') or ended (null)
 //   opts.tune                optional overrides of TUNE below (for tuning on the phone)
 //
 // Gestures: 1 finger move = cursor, tap = click (double/triple when quick and close), tap then touch again and
-// move = drag. 2 fingers move = scroll, tap = right click, pinch = zoom the view. 3 fingers swipe left/right =
+// move = drag; 1 finger sliding up or down from the left or right edge = scroll. 2 fingers move = scroll, tap = right click, pinch = zoom the view. 3 fingers swipe left/right =
 // next/previous Space, up = Mission Control, down = App Exposé, tap = Look Up. 4+ fingers do nothing.
 // The kind of gesture is decided once per touch sequence (first finger down to last finger up), from the most
 // fingers down and the first clear movement, and kept until every finger lifts: lifting one finger of a scroll
@@ -29,6 +30,8 @@ function trackpad() {
     POINTER_MIN: 1.25, POINTER_MAX: 5.2, ACCEL_FROM: 0.03, ACCEL_TO: 0.7,
     SPEED_TAU: 25,      // smoothing of the speed that picks the gain, so event-timing jitter does not wobble it
     SCROLL_GAIN: 1.25,  // scroll tracks the fingers 1:1 in feel; the Mac's Settings scales it
+    SCROLL_DIR: -1,     // the owner's choice: the page moves against the fingers (1 = with them, as on an iPhone)
+    EDGE: 30,           // 1 finger landing this close to the pad's left or right side and going up or down scrolls
     // Fingers of one gesture land 10-50 ms apart: no kind is decided this soon after a finger lands (unless the
     // movement is already large), so a two-finger scroll does not start as a cursor move.
     SETTLE: 40,
@@ -67,6 +70,7 @@ function trackpad() {
     let lastTap = null;      // { up, x, y, count }: the last click from a tap, for double clicks and tap-to-drag
     let speed = 0;           // smoothed pointer speed
     let raf = 0, dead = false;
+    let edgeOn = false;      // an edge scroll is lit (onEdge)
     const pend = { nx: 0, ny: 0, sx: 0, sy: 0 };   // movement waiting for the next frame
 
     // ---------- output, coalesced per frame ----------
@@ -89,7 +93,7 @@ function trackpad() {
       if (!Number.isFinite(g * dx) || !Number.isFinite(g * dy)) return;
       pend.nx += dx * g; pend.ny += dy * g; schedule();
     }
-    function scrollBy(dx, dy) { pend.sx += dx * C.SCROLL_GAIN; pend.sy += dy * C.SCROLL_GAIN; schedule(); }
+    function scrollBy(dx, dy) { const g = C.SCROLL_GAIN * C.SCROLL_DIR; pend.sx += dx * g; pend.sy += dy * g; schedule(); }
 
     function press() { clearTimeout(grace); grace = 0; if (!held) { flush(); held = true; out({ t: 'press', button: 'left' }); } }
     function release() { clearTimeout(grace); grace = 0; if (held) { flush(); held = false; out({ t: 'release', button: 'left' }); } }
@@ -115,13 +119,20 @@ function trackpad() {
       let den = 0, nx = 0, ny = 0;
       for (const p of s) { const dt = p[0] - tm; den += dt * dt; nx += dt * (p[1] - xm); ny += dt * (p[2] - ym); }
       if (!(den > 1)) return [0, 0];       // all samples at one instant: no estimate
-      return [clampV(nx / den * C.SCROLL_GAIN * fade), clampV(ny / den * C.SCROLL_GAIN * fade)];
+      const g = C.SCROLL_GAIN * C.SCROLL_DIR * fade;
+      return [seq.edge === 'scroll' ? 0 : clampV(nx / den * g), clampV(ny / den * g)];
     }
     function endScroll(v) {
       if (!scrolling) return;
       flush();
       scrolling = false;
       out({ t: 'scroll', dx: 0, dy: 0, phase: 'end', vx: r2(v[0]), vy: r2(v[1]) });
+      if (edgeOn) { edgeOn = false; call(opts.onEdge, null); }
+    }
+    function beginScroll() {
+      flush();
+      scrolling = true;
+      out({ t: 'scroll', dx: 0, dy: 0, phase: 'begin', vx: 0, vy: 0 });
     }
 
     // ---------- touch ----------
@@ -133,7 +144,7 @@ function trackpad() {
       return {
         pts: new Map(), n: 0, kind: null, t0: now, tLand: now, lastT: now, lastMoved: now,
         X: 0, Y: 0, samples: [], far: 0, pair: null, d0: 0, dPrev: 0, cont,
-        x0: 0, y0: 0, afterTap: false,
+        x0: 0, y0: 0, afterTap: false, edge: null,       // edge: 'left'|'right' landed by a side, 'scroll' once scrolling
       };
     }
     const spread = () => { const a = seq.pts.get(seq.pair[0]), b = seq.pts.get(seq.pair[1]); return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0; };
@@ -188,6 +199,8 @@ function trackpad() {
         const t = list[0];
         seq.x0 = t.clientX; seq.y0 = t.clientY;
         seq.afterTap = !!lastTap && now - lastTap.up <= C.TAP_GAP && Math.hypot(seq.x0 - lastTap.x, seq.y0 - lastTap.y) <= C.TAP_NEAR;
+        const r = el.getBoundingClientRect();
+        if (!seq.afterTap && !seq.cont) seq.edge = seq.x0 - r.left <= C.EDGE ? 'left' : r.right - seq.x0 <= C.EDGE ? 'right' : null;
       }
       if (seq.kind) return;                               // decided: extra fingers change nothing
       seq.tLand = now; seq.X = seq.Y = 0; seq.samples = [];   // measure the gesture from its last finger down
@@ -204,7 +217,7 @@ function trackpad() {
       const kind = seq.kind;
       if (!kind) decide(now);
       else if (kind === 'move' || kind === 'drag') nudge(dx, dy, now - seq.lastT);
-      else if (kind === 'scroll') scrollBy(dx, dy);
+      else if (kind === 'scroll') scrollBy(seq.edge === 'scroll' ? 0 : dx, dy);
       else if (kind === 'pinch') {
         const d = spread();
         if (d > 0 && seq.dPrev > 0 && d !== seq.dPrev) { const [cx, cy] = pairCentre(); call(opts.onZoom, d / seq.dPrev, cx, cy); seq.dPrev = d; }
@@ -217,6 +230,14 @@ function trackpad() {
       if (seq.n === 1) {
         if ((settled && m > C.SLOP) || m > 3 * C.SLOP || (now - seq.t0 > C.TAP && m >= 1.5)) {
           lastTap = null;
+          if (seq.edge && Math.abs(seq.Y) >= Math.abs(seq.X)) {   // along the edge: scroll; off it: the cursor
+            const side = seq.edge;
+            seq.kind = 'scroll'; seq.edge = 'scroll';
+            beginScroll();
+            edgeOn = true; call(opts.onEdge, side);
+            scrollBy(0, seq.Y);
+            return;
+          }
           if (seq.afterTap || seq.cont) { seq.kind = 'drag'; press(); } else seq.kind = 'move';
           nudge(seq.X, seq.Y, now - seq.t0);              // the movement so far, so slow precise moves are not lost
         }
@@ -230,9 +251,7 @@ function trackpad() {
           seq.dPrev = d;
         } else if ((m > C.SCROLL_SLOP && m > 1.5 * s) || m > 4 * C.SCROLL_SLOP) {
           seq.kind = 'scroll'; lastTap = null;
-          flush();
-          scrolling = true;
-          out({ t: 'scroll', dx: 0, dy: 0, phase: 'begin', vx: 0, vy: 0 });
+          beginScroll();
           scrollBy(seq.X, seq.Y);                         // the travel that recognised it goes in the first move
         }
       } else if (seq.n === 3) {

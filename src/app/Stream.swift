@@ -325,9 +325,14 @@ enum Input {
             }
         case "key":
             guard let name = j["key"] as? String, let code = keys[name] ?? keys[name.lowercased()] else { return }
+            // A real arrow key also carries the fn and keypad flags, and macOS's own shortcuts match on them:
+            // ctrl+arrow without them switches no Space and opens no Mission Control.
+            var f = flags(j)
+            if (123...126).contains(code) { f.insert(.maskSecondaryFn); f.insert(.maskNumericPad) }
+            else if [115, 116, 117, 119, 121].contains(code) { f.insert(.maskSecondaryFn) }
             for down in [true, false] {
                 let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down)
-                e?.flags = flags(j)
+                e?.flags = f
                 e?.post(tap: .cghidEventTap)
             }
             if ["Tab", "Enter", "Escape"].contains(name) { Focus.checkSoon() }
